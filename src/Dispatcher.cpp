@@ -113,7 +113,6 @@ void Dispatcher::loop() {
   checkRecv();
   checkSend();
 
-  // Power saving (runtime configurable)
   if (isPowerSavingEnabled()) {
     const unsigned long now = _ms->getMillis();
     const bool radio_listening = _radio->isInRecvMode();
