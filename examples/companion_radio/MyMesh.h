@@ -107,6 +107,13 @@ protected:
   int calcRxDelay(float score, uint32_t air_time) const override;
   uint8_t getExtraAckTransmitCount() const override;
 
+  // Power management configuration
+  bool isPowerSavingEnabled() const override;
+  uint32_t getLightSleepIdleMs() const override;
+  uint32_t getLightSleepSliceMs() const override;
+  uint32_t getDeepSleepIdleMs() const override;
+  uint32_t getDeepSleepDurationSecs() const override;
+
   void logRxRaw(float snr, float rssi, const uint8_t raw[], int len) override;
   bool isAutoAddEnabled() const override;
   bool onContactPathRecv(ContactInfo& from, uint8_t* in_path, uint8_t in_path_len, uint8_t* out_path, uint8_t out_path_len, uint8_t extra_type, uint8_t* extra, uint8_t extra_len) override;

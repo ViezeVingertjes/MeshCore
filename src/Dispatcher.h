@@ -76,6 +76,8 @@ public:
 
   virtual float getLastRSSI() const { return 0; }
   virtual float getLastSNR() const { return 0; }
+
+  virtual MainBoard* getBoard() { return nullptr; }
 };
 
 /**
@@ -122,6 +124,7 @@ class Dispatcher {
   bool  prev_isrecv_mode;
   uint32_t n_sent_flood, n_sent_direct;
   uint32_t n_recv_flood, n_recv_direct;
+  unsigned long last_activity_ms;
 
   void processRecvPacket(Packet* pkt);
 
@@ -142,6 +145,7 @@ protected:
     _err_flags = 0;
     radio_nonrx_start = 0;
     prev_isrecv_mode = true;
+    last_activity_ms = 0;
   }
 
   virtual DispatcherAction onRecvPacket(Packet* pkt) = 0;
@@ -161,6 +165,13 @@ protected:
   virtual uint32_t getCADFailMaxDuration() const;
   virtual int getInterferenceThreshold() const { return 0; }    // disabled by default
   virtual int getAGCResetInterval() const { return 0; }    // disabled by default
+
+  // Power management configuration
+  virtual bool isPowerSavingEnabled() const { return false; }
+  virtual uint32_t getLightSleepIdleMs() const { return 300 * 1000UL; }      // 5 minutes default
+  virtual uint32_t getLightSleepSliceMs() const { return 10 * 1000UL; }      // 10 seconds default
+  virtual uint32_t getDeepSleepIdleMs() const { return 3600 * 1000UL; }      // 1 hour default
+  virtual uint32_t getDeepSleepDurationSecs() const { return 3600; }         // 1 hour default
 
 public:
   void begin();
