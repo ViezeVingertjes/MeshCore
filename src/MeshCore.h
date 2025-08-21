@@ -45,6 +45,9 @@ public:
   virtual void setGpio(uint32_t values) {}
   virtual uint8_t getStartupReason() const = 0;
   virtual bool startOTAUpdate(const char* id, char reply[]) { return false; }   // not supported
+  // Optional low-power hooks; default no-ops for unsupported boards
+  virtual void enterLightSleep(uint32_t idle_timeout_ms) { (void)idle_timeout_ms; }
+  virtual void enterDeepSleep(uint32_t seconds, int wake_pin = -1) { (void)seconds; (void)wake_pin; }
 };
 
 /**
