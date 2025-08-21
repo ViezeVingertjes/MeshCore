@@ -26,6 +26,11 @@ struct NodePrefs {  // persisted to file
     uint8_t flood_max;
     uint8_t interference_threshold;
     uint8_t agc_reset_interval;   // secs / 4
+    uint8_t power_save_enable;        // 0=off, 1=on
+    uint16_t light_sleep_idle_secs;   // seconds before light sleep
+    uint8_t light_sleep_slice_secs;   // light sleep duration
+    uint16_t deep_sleep_idle_secs;    // seconds before deep sleep
+    uint16_t deep_sleep_duration_secs; // deep sleep duration
 };
 
 class CommonCLICallbacks {

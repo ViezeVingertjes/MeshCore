@@ -43,6 +43,8 @@ public:
 
   void loop() override;
 
+  mesh::MainBoard* getBoard() override { return _board; }
+
   uint32_t getPacketsRecv() const { return n_recv; }
   uint32_t getPacketsSent() const { return n_sent; }
   void resetStats() { n_recv = n_sent = 0; }

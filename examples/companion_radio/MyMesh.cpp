@@ -215,6 +215,26 @@ uint8_t MyMesh::getExtraAckTransmitCount() const {
   return _prefs.multi_acks;
 }
 
+bool MyMesh::isPowerSavingEnabled() const {
+  return _prefs.power_save_enable != 0;
+}
+
+uint32_t MyMesh::getLightSleepIdleMs() const {
+  return _prefs.light_sleep_idle_secs * 1000UL;
+}
+
+uint32_t MyMesh::getLightSleepSliceMs() const {
+  return _prefs.light_sleep_slice_secs * 1000UL;
+}
+
+uint32_t MyMesh::getDeepSleepIdleMs() const {
+  return _prefs.deep_sleep_idle_secs * 1000UL;
+}
+
+uint32_t MyMesh::getDeepSleepDurationMs() const {
+  return _prefs.deep_sleep_duration_secs * 1000UL;
+}
+
 void MyMesh::logRxRaw(float snr, float rssi, const uint8_t raw[], int len) {
   if (_serial->isConnected() && len + 3 <= MAX_FRAME_SIZE) {
     int i = 0;
@@ -654,6 +674,13 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   _prefs.cr = LORA_CR;
   _prefs.tx_power_dbm = LORA_TX_POWER;
   //_prefs.rx_delay_base = 10.0f;  enable once new algo fixed
+  
+  // Power saving defaults
+  _prefs.power_save_enable = 0;  // disabled by default
+  _prefs.light_sleep_idle_secs = 300;  // 5 minutes
+  _prefs.light_sleep_slice_secs = 10;  // 10 seconds
+  _prefs.deep_sleep_idle_secs = 3600;  // 1 hour
+  _prefs.deep_sleep_duration_secs = 3600;  // 1 hour
 }
 
 void MyMesh::begin(bool has_display) {

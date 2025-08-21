@@ -19,6 +19,7 @@ void Dispatcher::begin() {
   n_recv_flood = n_recv_direct = 0;
   _err_flags = 0;
   radio_nonrx_start = _ms->getMillis();
+  last_activity_ms = radio_nonrx_start;
 
   _radio->begin();
   prev_isrecv_mode = _radio->isInRecvMode();
@@ -62,6 +63,7 @@ void Dispatcher::loop() {
     if (_radio->isSendComplete()) {
       long t = _ms->getMillis() - outbound_start;
       total_air_time += t;  // keep track of how much air time we are using
+      last_activity_ms = _ms->getMillis();
       //Serial.print("  airtime="); Serial.println(t);
 
       // will need radio silence up to next_tx_time
@@ -106,6 +108,31 @@ void Dispatcher::loop() {
   }
   checkRecv();
   checkSend();
+
+  // Power saving (runtime configurable)
+  if (isPowerSavingEnabled()) {
+    const unsigned long now = _ms->getMillis();
+    const bool radio_listening = _radio->isInRecvMode();
+    const bool has_outbound = _mgr->getOutboundCount(now) > 0;
+    if (radio_listening && !has_outbound) {
+      unsigned long idle_ms = now - last_activity_ms;
+      if (idle_ms > getLightSleepIdleMs()) {
+        auto board = _radio->getBoard();
+        if (board) {
+          board->enterLightSleep(getLightSleepSliceMs());
+          last_activity_ms = _ms->getMillis();
+        }
+      }
+      
+      // Deep sleep after extended idle
+      if ((now - last_activity_ms) > getDeepSleepIdleMs()) {
+        auto board = _radio->getBoard();
+        if (board) {
+          board->enterDeepSleep(getDeepSleepDurationMs() / 1000);
+        }
+      }
+    }
+  }
 }
 
 void Dispatcher::checkRecv() {
@@ -116,6 +143,7 @@ void Dispatcher::checkRecv() {
     uint8_t raw[MAX_TRANS_UNIT+1];
     int len = _radio->recvRaw(raw, MAX_TRANS_UNIT);
     if (len > 0) {
+      last_activity_ms = _ms->getMillis();
       logRxRaw(_radio->getLastSNR(), _radio->getLastRSSI(), raw, len);
 
       pkt = _mgr->allocNew();
@@ -269,6 +297,7 @@ void Dispatcher::checkSend() {
 
       uint32_t max_airtime = _radio->getEstAirtimeFor(len)*3/2;
       outbound_start = _ms->getMillis();
+      last_activity_ms = outbound_start;
       bool success = _radio->startSendRaw(raw, len);
       if (!success) {
         MESH_DEBUG_PRINTLN("%s Dispatcher::loop(): ERROR: send start failed!", getLogDateTime());

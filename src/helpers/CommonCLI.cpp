@@ -58,6 +58,11 @@ void CommonCLI::loadPrefsInt(FILESYSTEM* fs, const char* filename) {
     file.read((uint8_t *) &_prefs->flood_max, sizeof(_prefs->flood_max));   // 124
     file.read((uint8_t *) &_prefs->flood_advert_interval, sizeof(_prefs->flood_advert_interval));  // 125
     file.read((uint8_t *) &_prefs->interference_threshold, sizeof(_prefs->interference_threshold));  // 126
+    file.read((uint8_t *) &_prefs->power_save_enable, sizeof(_prefs->power_save_enable));  // 127
+    file.read((uint8_t *) &_prefs->light_sleep_idle_secs, sizeof(_prefs->light_sleep_idle_secs));  // 128
+    file.read((uint8_t *) &_prefs->light_sleep_slice_secs, sizeof(_prefs->light_sleep_slice_secs));  // 130
+    file.read((uint8_t *) &_prefs->deep_sleep_idle_secs, sizeof(_prefs->deep_sleep_idle_secs));  // 131
+    file.read((uint8_t *) &_prefs->deep_sleep_duration_secs, sizeof(_prefs->deep_sleep_duration_secs));  // 133
 
     // sanitise bad pref values
     _prefs->rx_delay_base = constrain(_prefs->rx_delay_base, 0, 20.0f);
@@ -70,6 +75,11 @@ void CommonCLI::loadPrefsInt(FILESYSTEM* fs, const char* filename) {
     _prefs->cr = constrain(_prefs->cr, 5, 8);
     _prefs->tx_power_dbm = constrain(_prefs->tx_power_dbm, 1, 30);
     _prefs->multi_acks = constrain(_prefs->multi_acks, 0, 1);
+    _prefs->power_save_enable = constrain(_prefs->power_save_enable, 0, 1);
+    _prefs->light_sleep_idle_secs = constrain(_prefs->light_sleep_idle_secs, 60, 7200);  // 1 min to 2 hours
+    _prefs->light_sleep_slice_secs = constrain(_prefs->light_sleep_slice_secs, 1, 60);   // 1 sec to 1 min
+    _prefs->deep_sleep_idle_secs = constrain(_prefs->deep_sleep_idle_secs, 300, 86400);  // 5 min to 24 hours
+    _prefs->deep_sleep_duration_secs = constrain(_prefs->deep_sleep_duration_secs, 300, 86400); // 5 min to 24 hours
 
     file.close();
   }
@@ -114,6 +124,11 @@ void CommonCLI::savePrefs(FILESYSTEM* fs) {
     file.write((uint8_t *) &_prefs->flood_max, sizeof(_prefs->flood_max));   // 124
     file.write((uint8_t *) &_prefs->flood_advert_interval, sizeof(_prefs->flood_advert_interval));  // 125
     file.write((uint8_t *) &_prefs->interference_threshold, sizeof(_prefs->interference_threshold));  // 126
+    file.write((uint8_t *) &_prefs->power_save_enable, sizeof(_prefs->power_save_enable));  // 127
+    file.write((uint8_t *) &_prefs->light_sleep_idle_secs, sizeof(_prefs->light_sleep_idle_secs));  // 128
+    file.write((uint8_t *) &_prefs->light_sleep_slice_secs, sizeof(_prefs->light_sleep_slice_secs));  // 130
+    file.write((uint8_t *) &_prefs->deep_sleep_idle_secs, sizeof(_prefs->deep_sleep_idle_secs));  // 131
+    file.write((uint8_t *) &_prefs->deep_sleep_duration_secs, sizeof(_prefs->deep_sleep_duration_secs));  // 133
 
     file.close();
   }
@@ -378,6 +393,51 @@ void CommonCLI::handleCommand(uint32_t sender_timestamp, const char* command, ch
         _prefs->freq = atof(&config[5]);
         savePrefs();
         strcpy(reply, "OK - reboot to apply");
+      } else if (memcmp(config, "power.enable ", 13) == 0) {
+        uint8_t enable = atoi(&config[13]);
+        if (enable <= 1) {
+          _prefs->power_save_enable = enable;
+          savePrefs();
+          strcpy(reply, enable ? "OK - power saving enabled" : "OK - power saving disabled");
+        } else {
+          strcpy(reply, "Error, use 0 or 1");
+        }
+      } else if (memcmp(config, "power.light_idle ", 17) == 0) {
+        uint16_t secs = atoi(&config[17]);
+        if (secs >= 60 && secs <= 7200) {
+          _prefs->light_sleep_idle_secs = secs;
+          savePrefs();
+          strcpy(reply, "OK");
+        } else {
+          strcpy(reply, "Error, range 60-7200 seconds");
+        }
+      } else if (memcmp(config, "power.light_slice ", 18) == 0) {
+        uint8_t secs = atoi(&config[18]);
+        if (secs >= 1 && secs <= 60) {
+          _prefs->light_sleep_slice_secs = secs;
+          savePrefs();
+          strcpy(reply, "OK");
+        } else {
+          strcpy(reply, "Error, range 1-60 seconds");
+        }
+      } else if (memcmp(config, "power.deep_idle ", 16) == 0) {
+        uint16_t secs = atoi(&config[16]);
+        if (secs >= 300 && secs <= 86400) {
+          _prefs->deep_sleep_idle_secs = secs;
+          savePrefs();
+          strcpy(reply, "OK");
+        } else {
+          strcpy(reply, "Error, range 300-86400 seconds");
+        }
+      } else if (memcmp(config, "power.deep_duration ", 20) == 0) {
+        uint16_t secs = atoi(&config[20]);
+        if (secs >= 300 && secs <= 86400) {
+          _prefs->deep_sleep_duration_secs = secs;
+          savePrefs();
+          strcpy(reply, "OK");
+        } else {
+          strcpy(reply, "Error, range 300-86400 seconds");
+        }
       } else {
         sprintf(reply, "unknown config: %s", config);
       }

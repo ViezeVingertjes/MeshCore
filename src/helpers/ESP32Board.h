@@ -87,6 +87,9 @@ public:
   }
 
   bool startOTAUpdate(const char* id, char reply[]) override;
+
+  void enterLightSleep(uint32_t idle_timeout_ms) override;
+  void enterDeepSleep(uint32_t seconds, int wake_pin = -1) override;
 };
 
 class ESP32RTCClock : public mesh::RTCClock {
