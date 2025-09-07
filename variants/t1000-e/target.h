@@ -8,6 +8,7 @@
 #include <helpers/ArduinoHelpers.h>
 #include <helpers/SensorManager.h>
 #include <helpers/sensors/LocationProvider.h>
+#include <helpers/ui/MomentaryButton.h>
 #ifdef DISPLAY_CLASS
   #include "NullDisplayDriver.h"
 #endif
@@ -38,6 +39,7 @@ extern T1000eBoard board;
 extern WRAPPER_CLASS radio_driver;
 extern VolatileRTCClock rtc_clock;
 extern T1000SensorManager sensors;
+extern MomentaryButton user_btn;
 
 bool radio_init();
 uint32_t radio_get_rng_seed();

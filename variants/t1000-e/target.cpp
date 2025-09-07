@@ -2,6 +2,7 @@
 #include "t1000e_sensors.h"
 #include "target.h"
 #include <helpers/sensors/MicroNMEALocationProvider.h>
+#include <helpers/ui/MomentaryButton.h>
 
 T1000eBoard board;
 
@@ -12,6 +13,10 @@ WRAPPER_CLASS radio_driver(radio, board);
 VolatileRTCClock rtc_clock;
 MicroNMEALocationProvider nmea = MicroNMEALocationProvider(Serial1, &rtc_clock);
 T1000SensorManager sensors = T1000SensorManager(nmea);
+
+#ifdef PIN_USER_BTN
+MomentaryButton user_btn(PIN_USER_BTN, 1000, true);
+#endif
 
 #ifdef DISPLAY_CLASS
   NullDisplayDriver display;
