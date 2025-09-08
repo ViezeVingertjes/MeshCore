@@ -2,6 +2,7 @@
 #include "PromicroBoard.h"
 
 #include <bluefruit.h>
+#include <helpers/nrf52/PowerUtils.h>
 #include <Wire.h>
 
 static BLEDfu bledfu;
@@ -12,6 +13,9 @@ void PromicroBoard::begin() {
     btn_prev_state = HIGH;
   
     pinMode(PIN_VBAT_READ, INPUT);
+
+    // Enable DC/DC converter for improved power efficiency
+    mesh::nrf52::enableDcDc();
 
     #ifdef BUTTON_PIN
       pinMode(BUTTON_PIN, INPUT_PULLUP);

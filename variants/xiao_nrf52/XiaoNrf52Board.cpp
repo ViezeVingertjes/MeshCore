@@ -4,6 +4,7 @@
 #include "XiaoNrf52Board.h"
 
 #include <bluefruit.h>
+#include <helpers/nrf52/PowerUtils.h>
 #include <Wire.h>
 
 static BLEDfu bledfu;
@@ -29,6 +30,9 @@ void XiaoNrf52Board::begin() {
   pinMode(PIN_VBAT, INPUT);
   pinMode(VBAT_ENABLE, OUTPUT);
   digitalWrite(VBAT_ENABLE, HIGH);
+
+  // Enable DC/DC converter for improved power efficiency
+  mesh::nrf52::enableDcDc();
 
 #if defined(PIN_WIRE_SDA) && defined(PIN_WIRE_SCL)
   Wire.setPins(PIN_WIRE_SDA, PIN_WIRE_SCL);

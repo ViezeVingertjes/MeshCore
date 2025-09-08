@@ -2,6 +2,7 @@
 #include "WioTrackerL1Board.h"
 
 #include <bluefruit.h>
+#include <helpers/nrf52/PowerUtils.h>
 #include <Wire.h>
 
 static BLEDfu bledfu;
@@ -22,6 +23,9 @@ void WioTrackerL1Board::begin() {
   // for future use, sub-classes SHOULD call this from their begin()
   startup_reason = BD_STARTUP_NORMAL;
   btn_prev_state = HIGH;
+
+  // Enable DC/DC converter for improved power efficiency
+  mesh::nrf52::enableDcDc();
 
   pinMode(PIN_VBAT_READ, INPUT); // VBAT ADC input
   // Set all button pins to INPUT_PULLUP

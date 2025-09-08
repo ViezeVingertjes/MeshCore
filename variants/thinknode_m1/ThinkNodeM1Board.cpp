@@ -5,6 +5,7 @@
 
 #include <Wire.h>
 #include <bluefruit.h>
+#include <helpers/nrf52/PowerUtils.h>
 
 static BLEDfu bledfu;
 
@@ -23,6 +24,9 @@ static void disconnect_callback(uint16_t conn_handle, uint8_t reason) {
 void ThinkNodeM1Board::begin() {
   // for future use, sub-classes SHOULD call this from their begin()
   startup_reason = BD_STARTUP_NORMAL;
+
+  // Enable DC/DC converter for improved power efficiency
+  mesh::nrf52::enableDcDc();
 
   Wire.begin();
 

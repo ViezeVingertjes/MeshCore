@@ -3,6 +3,7 @@
 #include <Wire.h>
 
 #include <bluefruit.h>
+#include <helpers/nrf52/PowerUtils.h>
 
 void T1000eBoard::begin() {
   // for future use, sub-classes SHOULD call this from their begin()
@@ -12,7 +13,7 @@ void T1000eBoard::begin() {
   sd_power_mode_set(NRF_POWER_MODE_LOWPWR);
 
   // Enable DC/DC converter for improved power efficiency
-  NRF_POWER->DCDCEN = 1;
+  mesh::nrf52::enableDcDc();
 
 #ifdef BUTTON_PIN
   pinMode(BATTERY_PIN, INPUT);

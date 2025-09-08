@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include "MeshPocket.h"
 #include <bluefruit.h>
+#include <helpers/nrf52/PowerUtils.h>
 #include <Wire.h>
 
 static BLEDfu bledfu;
@@ -24,6 +25,9 @@ void HeltecMeshPocket::begin() {
   startup_reason = BD_STARTUP_NORMAL;
   Serial.begin(115200);
   pinMode(PIN_VBAT_READ, INPUT);
+
+  // Enable DC/DC converter for improved power efficiency
+  mesh::nrf52::enableDcDc();
 
   pinMode(PIN_USER_BTN, INPUT);
 }

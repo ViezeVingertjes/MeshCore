@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <bluefruit.h>
+#include <helpers/nrf52/PowerUtils.h>
 
 static BLEDfu bledfu;
 
@@ -28,7 +29,7 @@ void T114Board::begin() {
   sd_power_mode_set(NRF_POWER_MODE_LOWPWR);
 
   // Enable DC/DC converter for better efficiency (REG1 stage)
-  NRF_POWER->DCDCEN = 1;
+  mesh::nrf52::enableDcDc();
 
   // Power down unused communication peripherals
   // UART1 - Not used on T114
