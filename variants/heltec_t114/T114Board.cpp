@@ -88,6 +88,7 @@ bool T114Board::startOTAUpdate(const char *id, char reply[]) {
   Bluefruit.configPrphConn(92, BLE_GAP_EVENT_LENGTH_MIN, 16, 16);
 
   Bluefruit.begin(1, 0);
+  mesh::nrf52::enableDcDc();
   // Set max power. Accepted values are: -40, -30, -20, -16, -12, -8, -4, 0, 4
   Bluefruit.setTxPower(4);
   // Set the BLE device name

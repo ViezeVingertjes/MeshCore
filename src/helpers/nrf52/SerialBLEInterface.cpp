@@ -1,4 +1,5 @@
 #include "SerialBLEInterface.h"
+#include <helpers/nrf52/PowerUtils.h>
 
 static SerialBLEInterface* instance;
 
@@ -29,6 +30,7 @@ void SerialBLEInterface::begin(const char* device_name, uint32_t pin_code) {
   Bluefruit.configPrphConn(250, BLE_GAP_EVENT_LENGTH_MIN, 16, 16);  // increase MTU
   Bluefruit.setTxPower(BLE_TX_POWER);
   Bluefruit.begin();
+  mesh::nrf52::enableDcDc();
   Bluefruit.setName(device_name);
 
   Bluefruit.Security.setMITM(true);
