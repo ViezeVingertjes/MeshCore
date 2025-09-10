@@ -30,7 +30,11 @@ public:
 
   #ifdef P_LORA_TX_LED
     pinMode(P_LORA_TX_LED, OUTPUT);
-    digitalWrite(P_LORA_TX_LED, LOW);
+  #ifdef P_LORA_TX_LED_ACTIVE_LOW
+    digitalWrite(P_LORA_TX_LED, HIGH);   // idle off for active-low LED
+  #else
+    digitalWrite(P_LORA_TX_LED, LOW);    // idle off for active-high LED
+  #endif
   #endif
 
   #if defined(PIN_BOARD_SDA) && defined(PIN_BOARD_SCL)
@@ -46,10 +50,18 @@ public:
 
 #if defined(P_LORA_TX_LED)
   void onBeforeTransmit() override {
-    digitalWrite(P_LORA_TX_LED, HIGH);   // turn TX LED on
+  #ifdef P_LORA_TX_LED_ACTIVE_LOW
+    digitalWrite(P_LORA_TX_LED, LOW);    // active-low: on
+  #else
+    digitalWrite(P_LORA_TX_LED, HIGH);   // active-high: on
+  #endif
   }
   void onAfterTransmit() override {
-    digitalWrite(P_LORA_TX_LED, LOW);   // turn TX LED off
+  #ifdef P_LORA_TX_LED_ACTIVE_LOW
+    digitalWrite(P_LORA_TX_LED, HIGH);   // active-low: off
+  #else
+    digitalWrite(P_LORA_TX_LED, LOW);    // active-high: off
+  #endif
   }
 #elif defined(P_LORA_TX_NEOPIXEL_LED)
   #define NEOPIXEL_BRIGHTNESS    64  // white brightness (max 255)
