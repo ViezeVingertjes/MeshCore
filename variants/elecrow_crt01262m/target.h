@@ -9,7 +9,7 @@
 #include <helpers/SensorManager.h>
 
 #ifdef DISPLAY_CLASS
-  #include <helpers/ui/ST7735Display.h>
+  #include <helpers/ui/TFT_eSPIDisplay.h>
 #endif
 #if defined(DISPLAY_CLASS) || defined(PIN_USER_BTN)
   #include <helpers/ui/MomentaryButton.h>
