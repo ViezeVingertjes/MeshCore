@@ -65,6 +65,22 @@ void KISSModem::onKISSFrame(uint8_t command, const uint8_t* data, size_t len) {
       handleSignRequest(data, len);
       break;
       
+    case kiss::CMD_ENCRYPT_DATA:
+      handleEncryptRequest(data, len);
+      break;
+      
+    case kiss::CMD_DECRYPT_DATA:
+      handleDecryptRequest(data, len);
+      break;
+      
+    case kiss::CMD_KEY_EXCHANGE:
+      handleKeyExchangeRequest(data, len);
+      break;
+      
+    case kiss::CMD_HASH:
+      handleHashRequest(data, len);
+      break;
+      
     default:
       MESH_DEBUG_PRINTLN("Unknown KISS command: %02X", (uint32_t)command);
       break;
@@ -86,6 +102,66 @@ void KISSModem::handleSignRequest(const uint8_t* data, size_t len) {
   self_id.sign(signature, data, len);
   
   _kiss->sendFrame(kiss::CMD_RESP_SIGNATURE, signature, SIGNATURE_SIZE);
+  _stats.frames_to_serial++;
+}
+
+void KISSModem::handleEncryptRequest(const uint8_t* data, size_t len) {
+  if (len < CIPHER_KEY_SIZE + 1 || len > 512) return;
+  
+  const uint8_t* input_psk = data;
+  const uint8_t* plaintext = data + CIPHER_KEY_SIZE;
+  size_t plaintext_len = len - CIPHER_KEY_SIZE;
+  
+  uint8_t psk_padded[PUB_KEY_SIZE];
+  memcpy(psk_padded, input_psk, CIPHER_KEY_SIZE);
+  memset(psk_padded + CIPHER_KEY_SIZE, 0, PUB_KEY_SIZE - CIPHER_KEY_SIZE);
+  
+  uint8_t encrypted[512];
+  int encrypted_len = mesh::Utils::encryptThenMAC(psk_padded, encrypted, plaintext, plaintext_len);
+  
+  if (encrypted_len > 0) {
+    _kiss->sendFrame(kiss::CMD_RESP_ENCRYPTED, encrypted, encrypted_len);
+    _stats.frames_to_serial++;
+  }
+}
+
+void KISSModem::handleDecryptRequest(const uint8_t* data, size_t len) {
+  if (len < CIPHER_KEY_SIZE + CIPHER_MAC_SIZE + 16 || len > 512) return;
+  
+  const uint8_t* input_psk = data;
+  const uint8_t* mac_and_ciphertext = data + CIPHER_KEY_SIZE;
+  size_t mac_and_ciphertext_len = len - CIPHER_KEY_SIZE;
+  
+  uint8_t psk_padded[PUB_KEY_SIZE];
+  memcpy(psk_padded, input_psk, CIPHER_KEY_SIZE);
+  memset(psk_padded + CIPHER_KEY_SIZE, 0, PUB_KEY_SIZE - CIPHER_KEY_SIZE);
+  
+  uint8_t decrypted[512];
+  int decrypted_len = mesh::Utils::MACThenDecrypt(psk_padded, decrypted, mac_and_ciphertext, mac_and_ciphertext_len);
+  
+  if (decrypted_len > 0) {
+    _kiss->sendFrame(kiss::CMD_RESP_DECRYPTED, decrypted, decrypted_len);
+    _stats.frames_to_serial++;
+  }
+}
+
+void KISSModem::handleKeyExchangeRequest(const uint8_t* data, size_t len) {
+  if (len != PUB_KEY_SIZE) return;
+  
+  uint8_t shared_secret[PUB_KEY_SIZE];
+  self_id.calcSharedSecret(shared_secret, data);
+  
+  _kiss->sendFrame(kiss::CMD_RESP_SHARED_SECRET, shared_secret, PUB_KEY_SIZE);
+  _stats.frames_to_serial++;
+}
+
+void KISSModem::handleHashRequest(const uint8_t* data, size_t len) {
+  if (len == 0 || len > 512) return;
+  
+  uint8_t hash[32];
+  mesh::Utils::sha256(hash, sizeof(hash), data, len);
+  
+  _kiss->sendFrame(kiss::CMD_RESP_HASH, hash, 32);
   _stats.frames_to_serial++;
 }
 

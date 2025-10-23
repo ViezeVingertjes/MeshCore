@@ -8,18 +8,15 @@ Usage:
     python test_kiss_send_chat.py [--port COM4] [--name "User"] [--message "Hello!"]
 
 Requirements:
-    pip install pyserial pycryptodome
+    pip install pyserial
 """
 
 import serial
 import struct
 import time
 import argparse
-import hashlib
 import base64
 from typing import Optional
-from Crypto.Cipher import AES
-from Crypto.Hash import HMAC, SHA256
 
 FEND = 0xC0
 FESC = 0xDB
@@ -28,7 +25,11 @@ TFESC = 0xDD
 
 CMD_DATA = 0x00
 CMD_GET_IDENTITY = 0x01
+CMD_ENCRYPT_DATA = 0x05
+CMD_HASH = 0x08
 CMD_RESP_IDENTITY = 0x11
+CMD_RESP_ENCRYPTED = 0x15
+CMD_RESP_HASH = 0x18
 
 ROUTE_TYPE_FLOOD = 0x01
 PAYLOAD_TYPE_GRP_TXT = 0x05
@@ -99,25 +100,21 @@ class KISSModem:
         frame = self._receive_frame()
         return frame[1] if frame and frame[0] == CMD_RESP_IDENTITY else None
     
+    def encrypt_data(self, psk: bytes, plaintext: bytes) -> Optional[bytes]:
+        self._send_frame(CMD_ENCRYPT_DATA, psk + plaintext)
+        frame = self._receive_frame()
+        return frame[1] if frame and frame[0] == CMD_RESP_ENCRYPTED else None
+    
+    def hash_data(self, data: bytes) -> Optional[bytes]:
+        self._send_frame(CMD_HASH, data)
+        frame = self._receive_frame()
+        return frame[1] if frame and frame[0] == CMD_RESP_HASH else None
+    
     def send_packet(self, packet: bytes):
         self._send_frame(CMD_DATA, packet)
 
 
-def encrypt_group_message(psk: bytes, plaintext: bytes) -> bytes:
-    padding_len = (16 - (len(plaintext) % 16)) % 16
-    padded = plaintext + b'\x00' * padding_len
-    
-    cipher = AES.new(psk[:16], AES.MODE_ECB)
-    ciphertext = cipher.encrypt(padded)
-    
-    h = HMAC.new(psk, digestmod=SHA256)
-    h.update(ciphertext)
-    mac = h.digest()[:2]
-    
-    return mac + ciphertext
-
-
-def create_group_chat_message(psk: bytes, sender_name: str, message: str) -> bytes:
+def create_group_chat_message(modem: 'KISSModem', psk: bytes, sender_name: str, message: str) -> bytes:
     timestamp = int(time.time())
     flags = 0x00
     
@@ -125,9 +122,14 @@ def create_group_chat_message(psk: bytes, sender_name: str, message: str) -> byt
     
     plaintext = struct.pack('<I', timestamp) + bytes([flags]) + text.encode('utf-8')
     
-    encrypted = encrypt_group_message(psk, plaintext)
+    encrypted = modem.encrypt_data(psk, plaintext)
+    if not encrypted:
+        raise RuntimeError("Failed to encrypt message")
     
-    channel_hash = hashlib.sha256(psk).digest()[0]
+    psk_hash = modem.hash_data(psk)
+    if not psk_hash:
+        raise RuntimeError("Failed to hash PSK")
+    channel_hash = psk_hash[0]
     
     header = ROUTE_TYPE_FLOOD | (PAYLOAD_TYPE_GRP_TXT << 2)
     payload = bytes([channel_hash]) + encrypted
@@ -161,7 +163,7 @@ def main():
             return
         print(f"Identity: {pub_key.hex()}")
         
-        packet = create_group_chat_message(psk, args.name, args.message)
+        packet = create_group_chat_message(modem, psk, args.name, args.message)
         print(f"Packet: {len(packet)} bytes")
         
         modem.send_packet(packet)

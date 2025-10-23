@@ -45,6 +45,10 @@
   #define LORA_TX_POWER  20
 #endif
 
+#ifndef KISS_DISABLE_REPEATER
+  #define KISS_DISABLE_REPEATER  1
+#endif
+
 #define FIRMWARE_ROLE "kiss_modem"
 
 struct ModemStats {
@@ -67,6 +71,10 @@ private:
   
   void sendIdentityResponse();
   void handleSignRequest(const uint8_t* data, size_t len);
+  void handleEncryptRequest(const uint8_t* data, size_t len);
+  void handleDecryptRequest(const uint8_t* data, size_t len);
+  void handleKeyExchangeRequest(const uint8_t* data, size_t len);
+  void handleHashRequest(const uint8_t* data, size_t len);
   void handleDataFrame(const uint8_t* data, size_t len);
   bool isValidPacketData(const uint8_t* data, size_t len) const;
   void transmitPacket(mesh::Packet* packet);
@@ -79,7 +87,11 @@ protected:
   }
   
   bool allowPacketForward(const mesh::Packet* packet) override {
+#if KISS_DISABLE_REPEATER
+    return false;
+#else
     return !_transmittingFromSerial;
+#endif
   }
   
 public:

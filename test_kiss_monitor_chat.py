@@ -8,18 +8,15 @@ Usage:
     python test_kiss_monitor_chat.py [--port COM4]
 
 Requirements:
-    pip install pyserial pycryptodome
+    pip install pyserial
 """
 
 import serial
 import struct
 import time
 import argparse
-import hashlib
 import base64
 from typing import Optional
-from Crypto.Cipher import AES
-from Crypto.Hash import HMAC, SHA256
 
 FEND = 0xC0
 FESC = 0xDB
@@ -28,7 +25,11 @@ TFESC = 0xDD
 
 CMD_DATA = 0x00
 CMD_GET_IDENTITY = 0x01
+CMD_DECRYPT_DATA = 0x06
+CMD_HASH = 0x08
 CMD_RESP_IDENTITY = 0x11
+CMD_RESP_DECRYPTED = 0x16
+CMD_RESP_HASH = 0x18
 
 ROUTE_TYPE_FLOOD = 0x01
 PAYLOAD_TYPE_GRP_TXT = 0x05
@@ -99,6 +100,16 @@ class KISSModem:
         frame = self._receive_frame(timeout=2.0)
         return frame[1] if frame and frame[0] == CMD_RESP_IDENTITY else None
     
+    def decrypt_data(self, psk: bytes, mac_and_ciphertext: bytes) -> Optional[bytes]:
+        self._send_frame(CMD_DECRYPT_DATA, psk + mac_and_ciphertext)
+        frame = self._receive_frame(timeout=1.0)
+        return frame[1] if frame and frame[0] == CMD_RESP_DECRYPTED else None
+    
+    def hash_data(self, data: bytes) -> Optional[bytes]:
+        self._send_frame(CMD_HASH, data)
+        frame = self._receive_frame(timeout=1.0)
+        return frame[1] if frame and frame[0] == CMD_RESP_HASH else None
+    
     def listen_packets(self, callback):
         while True:
             frame = self._receive_frame(timeout=0.5)
@@ -106,27 +117,7 @@ class KISSModem:
                 callback(frame[1])
 
 
-def decrypt_group_message(psk: bytes, mac_and_ciphertext: bytes) -> Optional[bytes]:
-    if len(mac_and_ciphertext) < 3:
-        return None
-    
-    mac = mac_and_ciphertext[:2]
-    ciphertext = mac_and_ciphertext[2:]
-    
-    h = HMAC.new(psk, digestmod=SHA256)
-    h.update(ciphertext)
-    expected_mac = h.digest()[:2]
-    
-    if mac != expected_mac:
-        return None
-    
-    cipher = AES.new(psk[:16], AES.MODE_ECB)
-    plaintext = cipher.decrypt(ciphertext)
-    
-    return plaintext
-
-
-def parse_group_text_packet(packet: bytes, psk: bytes, channel_hash: int) -> Optional[dict]:
+def parse_group_text_packet(modem: 'KISSModem', packet: bytes, psk: bytes, channel_hash: int) -> Optional[dict]:
     if len(packet) < 2:
         return None
     
@@ -151,7 +142,7 @@ def parse_group_text_packet(packet: bytes, psk: bytes, channel_hash: int) -> Opt
     
     mac_and_ciphertext = payload[1:]
     
-    plaintext = decrypt_group_message(psk, mac_and_ciphertext)
+    plaintext = modem.decrypt_data(psk, mac_and_ciphertext)
     if not plaintext:
         return None
     
@@ -181,11 +172,6 @@ def main():
     print()
     
     psk = base64.b64decode(PUBLIC_CHANNEL_PSK)
-    channel_hash = hashlib.sha256(psk).digest()[0]
-    
-    print(f"Channel PSK: {psk.hex()}")
-    print(f"Channel hash: {channel_hash:#04x}")
-    print()
     
     try:
         modem = KISSModem(args.port)
@@ -196,12 +182,21 @@ def main():
             print("ERROR: Failed to get device identity")
             return
         print(f"Identity: {pub_key.hex()}")
+        
+        psk_hash = modem.hash_data(psk)
+        if not psk_hash:
+            print("ERROR: Failed to hash PSK")
+            return
+        channel_hash = psk_hash[0]
+        
+        print(f"Channel PSK: {psk.hex()}")
+        print(f"Channel hash: {channel_hash:#04x}")
         print()
         print("Listening for messages...")
         print("-" * 60)
         
         def handle_packet(packet: bytes):
-            result = parse_group_text_packet(packet, psk, channel_hash)
+            result = parse_group_text_packet(modem, packet, psk, channel_hash)
             if result:
                 timestamp_str = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(result['timestamp']))
                 print(f"[{timestamp_str}] {result['message']}")
