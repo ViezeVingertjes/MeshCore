@@ -105,19 +105,31 @@ void KISSModem::handleSignRequest(const uint8_t* data, size_t len) {
   _stats.frames_to_serial++;
 }
 
+size_t KISSModem::prepareKey(uint8_t* key_out, const uint8_t* key_in, size_t total_len, size_t min_data_len) const {
+  size_t key_len = CIPHER_KEY_SIZE;
+  if (total_len >= PUB_KEY_SIZE + min_data_len) {
+    key_len = PUB_KEY_SIZE;
+  }
+  
+  memcpy(key_out, key_in, key_len);
+  if (key_len < PUB_KEY_SIZE) {
+    memset(key_out + key_len, 0, PUB_KEY_SIZE - key_len);
+  }
+  
+  return key_len;
+}
+
 void KISSModem::handleEncryptRequest(const uint8_t* data, size_t len) {
   if (len < CIPHER_KEY_SIZE + 1 || len > 512) return;
   
-  const uint8_t* input_psk = data;
-  const uint8_t* plaintext = data + CIPHER_KEY_SIZE;
-  size_t plaintext_len = len - CIPHER_KEY_SIZE;
+  uint8_t key_padded[PUB_KEY_SIZE];
+  size_t key_len = prepareKey(key_padded, data, len, 1);
   
-  uint8_t psk_padded[PUB_KEY_SIZE];
-  memcpy(psk_padded, input_psk, CIPHER_KEY_SIZE);
-  memset(psk_padded + CIPHER_KEY_SIZE, 0, PUB_KEY_SIZE - CIPHER_KEY_SIZE);
+  const uint8_t* plaintext = data + key_len;
+  size_t plaintext_len = len - key_len;
   
   uint8_t encrypted[512];
-  int encrypted_len = mesh::Utils::encryptThenMAC(psk_padded, encrypted, plaintext, plaintext_len);
+  int encrypted_len = mesh::Utils::encryptThenMAC(key_padded, encrypted, plaintext, plaintext_len);
   
   if (encrypted_len > 0) {
     _kiss->sendFrame(kiss::CMD_RESP_ENCRYPTED, encrypted, encrypted_len);
@@ -128,16 +140,14 @@ void KISSModem::handleEncryptRequest(const uint8_t* data, size_t len) {
 void KISSModem::handleDecryptRequest(const uint8_t* data, size_t len) {
   if (len < CIPHER_KEY_SIZE + CIPHER_MAC_SIZE + 16 || len > 512) return;
   
-  const uint8_t* input_psk = data;
-  const uint8_t* mac_and_ciphertext = data + CIPHER_KEY_SIZE;
-  size_t mac_and_ciphertext_len = len - CIPHER_KEY_SIZE;
+  uint8_t key_padded[PUB_KEY_SIZE];
+  size_t key_len = prepareKey(key_padded, data, len, CIPHER_MAC_SIZE + 16);
   
-  uint8_t psk_padded[PUB_KEY_SIZE];
-  memcpy(psk_padded, input_psk, CIPHER_KEY_SIZE);
-  memset(psk_padded + CIPHER_KEY_SIZE, 0, PUB_KEY_SIZE - CIPHER_KEY_SIZE);
+  const uint8_t* mac_and_ciphertext = data + key_len;
+  size_t mac_and_ciphertext_len = len - key_len;
   
   uint8_t decrypted[512];
-  int decrypted_len = mesh::Utils::MACThenDecrypt(psk_padded, decrypted, mac_and_ciphertext, mac_and_ciphertext_len);
+  int decrypted_len = mesh::Utils::MACThenDecrypt(key_padded, decrypted, mac_and_ciphertext, mac_and_ciphertext_len);
   
   if (decrypted_len > 0) {
     _kiss->sendFrame(kiss::CMD_RESP_DECRYPTED, decrypted, decrypted_len);

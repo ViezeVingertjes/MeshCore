@@ -78,6 +78,7 @@ private:
   void handleDataFrame(const uint8_t* data, size_t len);
   bool isValidPacketData(const uint8_t* data, size_t len) const;
   void transmitPacket(mesh::Packet* packet);
+  size_t prepareKey(uint8_t* key_out, const uint8_t* key_in, size_t total_len, size_t min_data_len) const;
   
 protected:
   mesh::DispatcherAction onRecvPacket(mesh::Packet* pkt) override;
