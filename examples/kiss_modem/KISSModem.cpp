@@ -82,7 +82,6 @@ void KISSModem::onKISSFrame(uint8_t command, const uint8_t* data, size_t len) {
       break;
       
     default:
-      MESH_DEBUG_PRINTLN("Unknown KISS command: %02X", (uint32_t)command);
       break;
   }
 }

@@ -151,17 +151,20 @@ class KISSModem:
 class SimpleRoomServer:
     """Room server with login handling and packet deduplication"""
     
-    def __init__(self, modem: KISSModem, pub_key: bytes, room_name: str):
+    def __init__(self, modem: KISSModem, pub_key: bytes, room_name: str, verbose: bool = False):
         self.modem = modem
         self.pub_key = pub_key
         self.room_name = room_name
         self.my_hash = pub_key[0]
+        self.verbose = verbose
         self.next_advert_time = 0
         self.packet_cache = {}
         self.next_cache_cleanup = 0
     
-    def _log(self, msg: str):
-        print(f"[{time.strftime('%H:%M:%S')}] {msg}")
+    def _log(self, msg: str, level: str = 'info'):
+        if level == 'error' or self.verbose:
+            import sys
+            print(f"[{time.strftime('%H:%M:%S')}] {msg}", file=sys.stderr)
     
     def create_room_advert(self) -> bytes:
         appdata = bytearray([ADV_TYPE_ROOM | ADV_FLAG_HAS_NAME])
@@ -183,7 +186,7 @@ class SimpleRoomServer:
         try:
             self.modem.send_packet(self.create_room_advert())
         except Exception as e:
-            self._log(f"Advertisement error: {e}")
+            self._log(f"Advertisement error: {e}", 'error')
     
     def parse_packet(self, packet: bytes) -> Optional[dict]:
         if len(packet) < 2:
@@ -263,12 +266,12 @@ class SimpleRoomServer:
         
         shared_secret = self.modem.get_shared_secret(sender_pub_key)
         if not shared_secret:
-            self._log("ERROR: Failed to calculate shared secret")
+            self._log("Failed to calculate shared secret", 'error')
             return
         
         decrypted = self.modem.decrypt_data(shared_secret, mac_and_ciphertext)
         if not decrypted or len(decrypted) < 8:
-            self._log("ERROR: Failed to decrypt login request")
+            self._log("Failed to decrypt login request", 'error')
             return
         
         sender_timestamp = struct.unpack('<I', decrypted[0:4])[0]
@@ -293,7 +296,7 @@ class SimpleRoomServer:
         else:
             encrypted = self.modem.encrypt_data(shared_secret, bytes(response_data))
             if not encrypted:
-                self._log("ERROR: Failed to encrypt response")
+                self._log("Failed to encrypt response", 'error')
                 return
             response_packet = self._create_response(sender_hash, encrypted)
         
@@ -331,10 +334,12 @@ class SimpleRoomServer:
             self.cache_packet(parsed)
     
     def run(self):
-        print(f"\nRoom: {self.room_name}")
-        print(f"Hash: {self.my_hash:#04x}")
-        print(f"Identity: {self.pub_key.hex()}")
-        print("\nRunning... (Ctrl+C to stop)\n")
+        if self.verbose:
+            import sys
+            print(f"Room: {self.room_name}", file=sys.stderr)
+            print(f"Hash: {self.my_hash:#04x}", file=sys.stderr)
+            print(f"Identity: {self.pub_key.hex()}", file=sys.stderr)
+            print("Running...\n", file=sys.stderr)
         
         self.send_advertisement()
         self.next_advert_time = time.time() + ADVERT_INTERVAL_SECONDS
@@ -361,38 +366,43 @@ class SimpleRoomServer:
                 time.sleep(0.01)
                 
         except KeyboardInterrupt:
-            print("\nStopped")
+            pass
 
 
 def main():
     parser = argparse.ArgumentParser(description='MeshCore Simple Room Server')
     parser.add_argument('--port', default='COM4', help='Serial port')
     parser.add_argument('--name', default='Simple BBS', help='Room name')
+    parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbose logging')
     args = parser.parse_args()
     
-    print("MeshCore Simple Room Server")
-    print(f"Port: {args.port}")
+    import sys
+    if args.verbose:
+        print("MeshCore Simple Room Server", file=sys.stderr)
+        print(f"Port: {args.port}", file=sys.stderr)
     
     try:
         modem = KISSModem(args.port)
-        print("Connected")
+        if args.verbose:
+            print("Connected\n", file=sys.stderr)
         
         pub_key = modem.get_identity()
         if not pub_key:
-            print("ERROR: Failed to get identity")
+            print("ERROR: Failed to get identity", file=sys.stderr)
             return
         
-        server = SimpleRoomServer(modem, pub_key, args.name)
+        server = SimpleRoomServer(modem, pub_key, args.name, args.verbose)
         server.run()
         
     except serial.SerialException as e:
-        print(f"ERROR: {e}")
+        print(f"ERROR: {e}", file=sys.stderr)
     except KeyboardInterrupt:
         pass
     except Exception as e:
-        print(f"ERROR: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"ERROR: {e}", file=sys.stderr)
+        if args.verbose:
+            import traceback
+            traceback.print_exc(file=sys.stderr)
 
 
 if __name__ == '__main__':
