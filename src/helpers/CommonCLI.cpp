@@ -72,7 +72,8 @@ void CommonCLI::loadPrefsInt(FILESYSTEM* fs, const char* filename) {
     file.read((uint8_t *)&_prefs->advert_loc_policy, sizeof (_prefs->advert_loc_policy));          // 161
     file.read((uint8_t *)&_prefs->discovery_mod_timestamp, sizeof(_prefs->discovery_mod_timestamp)); // 162
     file.read((uint8_t *)&_prefs->adc_multiplier, sizeof(_prefs->adc_multiplier)); // 166
-    // 170
+    file.read((uint8_t *)&_prefs->no_repeat_packet_types, sizeof(_prefs->no_repeat_packet_types)); // 170
+    // 172
 
     // sanitise bad pref values
     _prefs->rx_delay_base = constrain(_prefs->rx_delay_base, 0, 20.0f);
@@ -155,7 +156,8 @@ void CommonCLI::savePrefs(FILESYSTEM* fs) {
     file.write((uint8_t *)&_prefs->advert_loc_policy, sizeof(_prefs->advert_loc_policy));           // 161
     file.write((uint8_t *)&_prefs->discovery_mod_timestamp, sizeof(_prefs->discovery_mod_timestamp)); // 162
     file.write((uint8_t *)&_prefs->adc_multiplier, sizeof(_prefs->adc_multiplier));                 // 166
-    // 170
+    file.write((uint8_t *)&_prefs->no_repeat_packet_types, sizeof(_prefs->no_repeat_packet_types)); // 170
+    // 172
 
     file.close();
   }
@@ -344,6 +346,31 @@ void CommonCLI::handleCommand(uint32_t sender_timestamp, const char* command, ch
           strcpy(reply, "Error: unsupported by this board");
         } else {
           sprintf(reply, "> %.3f", adc_mult);
+        }
+      } else if (memcmp(config, "no.repeat", 9) == 0) {
+        reply[0] = '>';
+        reply[1] = ' ';
+        int pos = 2;
+        bool has_any = false;
+        const char* type_names[] = {"req", "resp", "txt", "ack", "advert", "grp.txt", "grp.data", 
+                                     "anon", "path", "trace", "multi", "control", "12", "13", "14", "raw"};
+        for (int i = 0; i < 16; i++) {
+          if ((_prefs->no_repeat_packet_types & (1 << i)) != 0) {
+            if (has_any && pos < 150) {
+              reply[pos++] = ',';
+            }
+            int len = strlen(type_names[i]);
+            if (pos + len < 150) {
+              strcpy(&reply[pos], type_names[i]);
+              pos += len;
+              has_any = true;
+            }
+          }
+        }
+        if (!has_any) {
+          strcpy(&reply[2], "none");
+        } else {
+          reply[pos] = 0;
         }
       } else {
         sprintf(reply, "??: %s", config);
@@ -680,6 +707,46 @@ void CommonCLI::handleCommand(uint32_t sender_timestamp, const char* command, ch
         strcpy(reply, "Can't find GPS");
       }
 #endif
+    } else if (memcmp(command, "no.repeat.add ", 14) == 0) {
+      const char* type_name = &command[14];
+      const char* type_names[] = {"req", "resp", "txt", "ack", "advert", "grp.txt", "grp.data", 
+                                   "anon", "path", "trace", "multi", "control", "12", "13", "14", "raw"};
+      int type_idx = -1;
+      for (int i = 0; i < 16; i++) {
+        if (strcmp(type_name, type_names[i]) == 0) {
+          type_idx = i;
+          break;
+        }
+      }
+      if (type_idx >= 0) {
+        _prefs->no_repeat_packet_types |= (1 << type_idx);
+        savePrefs();
+        sprintf(reply, "OK - %s will not be repeated", type_name);
+      } else {
+        strcpy(reply, "Error: unknown type (use: req,resp,txt,ack,advert,grp.txt,grp.data,anon,path,trace,multi,control,raw)");
+      }
+    } else if (memcmp(command, "no.repeat.remove ", 17) == 0) {
+      const char* type_name = &command[17];
+      const char* type_names[] = {"req", "resp", "txt", "ack", "advert", "grp.txt", "grp.data", 
+                                   "anon", "path", "trace", "multi", "control", "12", "13", "14", "raw"};
+      int type_idx = -1;
+      for (int i = 0; i < 16; i++) {
+        if (strcmp(type_name, type_names[i]) == 0) {
+          type_idx = i;
+          break;
+        }
+      }
+      if (type_idx >= 0) {
+        _prefs->no_repeat_packet_types &= ~(1 << type_idx);
+        savePrefs();
+        sprintf(reply, "OK - %s will be repeated", type_name);
+      } else {
+        strcpy(reply, "Error: unknown type");
+      }
+    } else if (memcmp(command, "no.repeat.clear", 15) == 0) {
+      _prefs->no_repeat_packet_types = 0x0000;
+      savePrefs();
+      strcpy(reply, "OK - all packet types will be repeated");
     } else if (memcmp(command, "powersaving on", 14) == 0) {
       _prefs->powersaving_enabled = 1;
       savePrefs();

@@ -324,6 +324,13 @@ bool MyMesh::allowPacketForward(const mesh::Packet *packet) {
     MESH_DEBUG_PRINTLN("allowPacketForward: unknown transport code, or wildcard not allowed for FLOOD packet");
     return false;
   }
+  
+  uint8_t pkt_type = packet->getPayloadType();
+  if (pkt_type < 16 && (_prefs.no_repeat_packet_types & (1 << pkt_type)) != 0) {
+    MESH_DEBUG_PRINTLN("allowPacketForward: packet type %d filtered (not repeating)", pkt_type);
+    return false;
+  }
+  
   return true;
 }
 
@@ -723,6 +730,9 @@ MyMesh::MyMesh(mesh::MainBoard &board, mesh::Radio &radio, mesh::MillisecondCloc
   _prefs.advert_loc_policy = ADVERT_LOC_PREFS;
 
   _prefs.adc_multiplier = 0.0f; // 0.0f means use default board multiplier
+  
+  // Packet filter defaults - by default, repeat everything (bitmask = 0)
+  _prefs.no_repeat_packet_types = 0x0000;
 }
 
 void MyMesh::begin(FILESYSTEM *fs) {

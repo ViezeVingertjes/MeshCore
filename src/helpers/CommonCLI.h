@@ -50,6 +50,7 @@ struct NodePrefs { // persisted to file
   uint8_t advert_loc_policy;
   uint32_t discovery_mod_timestamp;
   float adc_multiplier;
+  uint16_t no_repeat_packet_types; // bitmask of packet types to NOT repeat (bit N = PAYLOAD_TYPE_N)
 };
 
 class CommonCLICallbacks {
