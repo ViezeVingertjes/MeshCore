@@ -327,6 +327,25 @@ bool MyMesh::allowPacketForward(const mesh::Packet *packet) {
   
   uint8_t pkt_type = packet->getPayloadType();
   if (pkt_type < 16 && (_prefs.no_repeat_packet_types & (1 << pkt_type)) != 0) {
+    // Check if this is a companion advert (ADV_TYPE_CHAT) - these should always be allowed
+    if (pkt_type == PAYLOAD_TYPE_ADVERT) {
+      // Parse the advert packet to check the ADV_TYPE
+      // Structure: pub_key(32) + timestamp(4) + signature(64) + app_data
+      const int app_data_offset = PUB_KEY_SIZE + 4 + SIGNATURE_SIZE;
+      if (packet->payload_len > app_data_offset) {
+        const uint8_t* app_data = &packet->payload[app_data_offset];
+        int app_data_len = packet->payload_len - app_data_offset;
+        
+        if (app_data_len > 0) {
+          AdvertDataParser parser(app_data, app_data_len);
+          if (parser.isValid() && parser.getType() == ADV_TYPE_CHAT) {
+            MESH_DEBUG_PRINTLN("allowPacketForward: allowing companion advert (ADV_TYPE_CHAT) despite filter");
+            return true;
+          }
+        }
+      }
+    }
+    
     MESH_DEBUG_PRINTLN("allowPacketForward: packet type %d filtered (not repeating)", pkt_type);
     return false;
   }

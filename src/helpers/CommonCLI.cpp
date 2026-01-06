@@ -721,7 +721,11 @@ void CommonCLI::handleCommand(uint32_t sender_timestamp, const char* command, ch
       if (type_idx >= 0) {
         _prefs->no_repeat_packet_types |= (1 << type_idx);
         savePrefs();
-        sprintf(reply, "OK - %s will not be repeated", type_name);
+        if (type_idx == 4) {  // PAYLOAD_TYPE_ADVERT
+          sprintf(reply, "OK - %s will not be repeated (except companion adverts)", type_name);
+        } else {
+          sprintf(reply, "OK - %s will not be repeated", type_name);
+        }
       } else {
         strcpy(reply, "Error: unknown type (use: req,resp,txt,ack,advert,grp.txt,grp.data,anon,path,trace,multi,control,raw)");
       }
