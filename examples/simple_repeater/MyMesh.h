@@ -67,6 +67,14 @@ struct NeighbourInfo {
   int8_t snr; // multiplied by 4, user should divide to get float value
 };
 
+#define TIME_SYNC_SAMPLES 8
+
+struct TimeSample {
+  uint8_t sender_prefix[4];
+  int32_t offset;
+  uint32_t sampled_at;
+};
+
 #ifndef FIRMWARE_BUILD_DATE
   #define FIRMWARE_BUILD_DATE   "30 Nov 2025"
 #endif
@@ -111,8 +119,12 @@ class MyMesh : public mesh::Mesh, public CommonCLICallbacks {
 #elif defined(WITH_ESPNOW_BRIDGE)
   ESPNowBridge bridge;
 #endif
+  TimeSample time_samples[TIME_SYNC_SAMPLES];
+  uint8_t time_sample_idx;
+  unsigned long next_time_sync;
 
   void putNeighbour(const mesh::Identity& id, uint32_t timestamp, float snr);
+  void applyTimeConsensus();
   uint8_t handleLoginReq(const mesh::Identity& sender, const uint8_t* secret, uint32_t sender_timestamp, const uint8_t* data, bool is_flood);
   int handleRequest(ClientInfo* sender, uint32_t sender_timestamp, uint8_t* payload, size_t payload_len);
   mesh::Packet* createSelfAdvert();
