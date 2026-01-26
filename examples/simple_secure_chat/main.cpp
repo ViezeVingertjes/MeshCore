@@ -186,8 +186,17 @@ class MyMesh : public BaseChatMesh, ContactVisitor {
   // Radio state tracking
   float last_snr;
   
+  // SNR averaging for stable readings
+  #define SNR_SAMPLE_SIZE 10
+  float snr_samples[SNR_SAMPLE_SIZE];
+  uint8_t snr_sample_index;
+  uint8_t snr_sample_count;
+  
   // Public message sending state (for display)
   unsigned long public_send_time;
+  
+  // Message receiving state (for display)
+  unsigned long last_receive_time;
   
   // Time sync consensus tracking
   #define TIME_SAMPLE_SIZE 5
@@ -270,6 +279,23 @@ public:
            (public_send_time != 0 && (now - public_send_time) < 2000);
   }
   
+  bool isReceiving() {
+    unsigned long now = millis();
+    return (last_receive_time != 0 && (now - last_receive_time) < 2000);
+  }
+  
+  // Format number compactly: 1-999 as-is, 1000+ as 1.0K, 1.1K, etc.
+  void formatCompactNumber(char* buf, size_t buf_size, uint32_t num) {
+    if (num < 1000) {
+      snprintf(buf, buf_size, "%lu", (unsigned long)num);
+    } else {
+      // Show as X.XK format (e.g., 1.2K for 1200)
+      uint32_t thousands = num / 1000;
+      uint32_t hundreds = (num % 1000) / 100;
+      snprintf(buf, buf_size, "%lu.%luK", (unsigned long)thousands, (unsigned long)hundreds);
+    }
+  }
+  
   void updateDisplay() {
     if (!display.isOn()) return;
     
@@ -295,21 +321,29 @@ public:
       display.print("No recipient");
     }
     
-    // Line 4: Signal strength or last message status
+    // Line 4: Signal strength (averaged SNR for stable reading)
     display.setCursor(0, 24);
-    if (last_snr != 0) {
-      snprintf(buf, sizeof(buf), "SNR: %.1fdB", last_snr);
-      display.print(buf);
+    if (radio_driver.getPacketsRecv() > 0) {
+      float avg_snr = getAverageSNR();
+      if (avg_snr != 0) {
+        snprintf(buf, sizeof(buf), "SNR: %.1fdB", avg_snr);
+        display.print(buf);
+      } else {
+        display.print("SNR: --");
+      }
     } else {
-      display.print("Ready");
+      display.print("No RX yet");
     }
     
-    // Line 5: Radio info (freq)
+    // Line 5: TX/RX packet counts (compact format)
     display.setCursor(0, 32);
-    snprintf(buf, sizeof(buf), "%.1f MHz", _prefs.freq);
+    char tx_buf[16], rx_buf[16];
+    formatCompactNumber(tx_buf, sizeof(tx_buf), radio_driver.getPacketsSent());
+    formatCompactNumber(rx_buf, sizeof(rx_buf), radio_driver.getPacketsRecv());
+    snprintf(buf, sizeof(buf), "TX:%s RX:%s", tx_buf, rx_buf);
     display.print(buf);
     
-    // Line 6: Status line (sending, etc.)
+    // Line 6: Status line (sending, receiving, idle)
     display.setCursor(0, 40);
     unsigned long now = millis();
     if (pending_message[0] != 0 && expected_ack_crc != 0) {
@@ -319,11 +353,29 @@ public:
     } else if (public_send_time != 0 && (now - public_send_time) < 2000) {
       // Show "Sending..." for 2 seconds after public message
       display.print("Sending...");
+    } else if (last_receive_time != 0 && (now - last_receive_time) < 2000) {
+      // Show "Receiving..." for 2 seconds after receiving a message
+      display.print("Receiving...");
     } else {
       if (public_send_time != 0 && (now - public_send_time) >= 2000) {
         public_send_time = 0;  // Clear after timeout
       }
+      if (last_receive_time != 0 && (now - last_receive_time) >= 2000) {
+        last_receive_time = 0;  // Clear after timeout
+      }
       display.print("Idle");
+    }
+    
+    // Line 7: Current datetime (to verify time sync) - full date and time
+    display.setCursor(0, 56);
+    uint32_t now_epoch = getRTCClock()->getCurrentTime();
+    if (now_epoch >= 1600000000) {  // Valid timestamp (after Sept 2020)
+      DateTime dt = DateTime(now_epoch);
+      snprintf(buf, sizeof(buf), "%02d/%02d/%04d %02d:%02d:%02d", 
+               dt.month(), dt.day(), dt.year(), dt.hour(), dt.minute(), dt.second());
+      display.print(buf);
+    } else {
+      display.print("--/--/---- --:--:--");
     }
     
     display.endFrame();
@@ -1192,6 +1244,39 @@ protected:
   }
 
 protected:
+  // Override to update SNR and receiving status for all received packets (including forwarded ones)
+  mesh::DispatcherAction onRecvPacket(mesh::Packet* pkt) override {
+    // Update SNR from radio driver for all received packets (including forwarded/repeated ones)
+    float current_snr = radio_driver.getLastSNR();
+    last_snr = current_snr;  // Store latest value
+    
+    // Add to averaging buffer for stable readings
+    if (current_snr != 0) {
+      snr_samples[snr_sample_index] = current_snr;
+      snr_sample_index = (snr_sample_index + 1) % SNR_SAMPLE_SIZE;
+      if (snr_sample_count < SNR_SAMPLE_SIZE) {
+        snr_sample_count++;
+      }
+    }
+    
+    // Update receive time for "Receiving..." status display (works for all packet types)
+    last_receive_time = millis();
+    
+    // Call parent implementation to handle routing/forwarding
+    return BaseChatMesh::onRecvPacket(pkt);
+  }
+  
+  // Calculate average SNR from recent samples
+  float getAverageSNR() {
+    if (snr_sample_count == 0) return 0.0f;
+    
+    float sum = 0.0f;
+    for (uint8_t i = 0; i < snr_sample_count; i++) {
+      sum += snr_samples[i];
+    }
+    return sum / snr_sample_count;
+  }
+  
   float getAirtimeBudgetFactor() const override {
     return _prefs.airtime_factor;
   }
@@ -1340,7 +1425,8 @@ protected:
     }
     
     // Track radio quality from last received packet
-    last_snr = pkt->getSNR();
+    last_snr = radio_driver.getLastSNR();
+    last_receive_time = millis();  // Track when we received a message
     
     ringBell();  // Notify user
     clearCurrentLine();
@@ -1366,7 +1452,7 @@ protected:
     autoSyncTime(sender_timestamp);
     
     // Track radio quality from last received packet
-    last_snr = pkt->getSNR();
+    last_snr = radio_driver.getLastSNR();
     
     clearCurrentLine();
     SerialPort.printf("!%s %s\n", from.name, text);
@@ -1384,7 +1470,7 @@ protected:
     }
     
     // Track radio quality from last received packet
-    last_snr = pkt->getSNR();
+    last_snr = radio_driver.getLastSNR();
     
     clearCurrentLine();
     SerialPort.printf("+%s %s\n", from.name, text);
@@ -1422,7 +1508,8 @@ protected:
     recent_msg_index = (recent_msg_index + 1) % RECENT_MSG_CACHE_SIZE;
     
     // Track radio quality from last received packet
-    last_snr = pkt->getSNR();
+    last_snr = radio_driver.getLastSNR();
+    last_receive_time = millis();  // Track when we received a message
     
     ringBell();  // Notify user
     clearCurrentLine();
@@ -1433,6 +1520,9 @@ protected:
     
     addMessageToHistory("Public", text, timestamp, 2);
     showPromptWithBuffer();  // Re-display prompt and any typed text
+#ifdef DISPLAY_CLASS
+    updateDisplay();
+#endif
   }
 
   uint8_t onContactRequest(const ContactInfo& contact, uint32_t sender_timestamp, const uint8_t* data, uint8_t len, uint8_t* reply) override {
@@ -1507,7 +1597,11 @@ public:
     memset(recent_messages, 0, sizeof(recent_messages));
     last_send_too_long = false;
     last_snr = 0;
+    snr_sample_index = 0;
+    snr_sample_count = 0;
+    memset(snr_samples, 0, sizeof(snr_samples));
     public_send_time = 0;
+    last_receive_time = 0;
     time_sample_count = 0;
     memset(time_samples, 0, sizeof(time_samples));
   }
@@ -1884,8 +1978,8 @@ void loop() {
   
 #ifdef DISPLAY_CLASS
   static unsigned long last_display_update = 0;
-  // Update more frequently when sending (to show status changes)
-  unsigned long update_interval = the_mesh.isSending() ? 200 : 500;
+  // Update more frequently when sending or receiving (to show status changes)
+  unsigned long update_interval = (the_mesh.isSending() || the_mesh.isReceiving()) ? 200 : 500;
   if (millis() - last_display_update > update_interval) {
     the_mesh.updateDisplay();
     last_display_update = millis();
