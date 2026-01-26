@@ -186,6 +186,9 @@ class MyMesh : public BaseChatMesh, ContactVisitor {
   // Radio state tracking
   float last_snr;
   
+  // Public message sending state (for display)
+  unsigned long public_send_time;
+  
   // Time sync consensus tracking
   #define TIME_SAMPLE_SIZE 5
   uint32_t time_samples[TIME_SAMPLE_SIZE];
@@ -260,6 +263,13 @@ class MyMesh : public BaseChatMesh, ContactVisitor {
 
 #ifdef DISPLAY_CLASS
 public:
+  bool isSending() {
+    unsigned long now = millis();
+    return (pending_message[0] != 0 && expected_ack_crc != 0) || 
+           (expected_ack_crc != 0) ||
+           (public_send_time != 0 && (now - public_send_time) < 2000);
+  }
+  
   void updateDisplay() {
     if (!display.isOn()) return;
     
@@ -301,11 +311,18 @@ public:
     
     // Line 6: Status line (sending, etc.)
     display.setCursor(0, 40);
+    unsigned long now = millis();
     if (pending_message[0] != 0 && expected_ack_crc != 0) {
       display.print("Sending...");
     } else if (expected_ack_crc != 0) {
       display.print("Waiting ACK...");
+    } else if (public_send_time != 0 && (now - public_send_time) < 2000) {
+      // Show "Sending..." for 2 seconds after public message
+      display.print("Sending...");
     } else {
+      if (public_send_time != 0 && (now - public_send_time) >= 2000) {
+        public_send_time = 0;  // Clear after timeout
+      }
       display.print("Idle");
     }
     
@@ -527,9 +544,8 @@ protected:
       }
     }
     
-    if (send_attempt == 0) {
-      showPromptWithBuffer();
-    }
+    // Don't show prompt here - let the main loop handle it after command processing
+    // This prevents double prompts
 #ifdef DISPLAY_CLASS
     updateDisplay();
 #endif
@@ -592,12 +608,16 @@ protected:
     auto pkt = createGroupDatagram(PAYLOAD_TYPE_GRP_TXT, _public->channel, temp, 5 + msg_len);
     if (pkt) {
       sendFlood(pkt);
+      public_send_time = _ms->getMillis();  // Track when we sent public message
       clearCurrentLine();
       SerialPort.printf("%s-- Sent to public%s\n", ansi(ANSI_DIM), ansi(ANSI_RESET));
       
       // Add sent public message to history
       addMessageToHistory(_prefs.node_name, msg_text, timestamp, 2);
-      showPromptWithBuffer();
+      showPrompt();  // Don't show buffer - command will be cleared by loop()
+#ifdef DISPLAY_CLASS
+      updateDisplay();  // Update display after sending
+#endif
     } else {
       printError("Send failed");
     }
@@ -1487,6 +1507,7 @@ public:
     memset(recent_messages, 0, sizeof(recent_messages));
     last_send_too_long = false;
     last_snr = 0;
+    public_send_time = 0;
     time_sample_count = 0;
     memset(time_samples, 0, sizeof(time_samples));
   }
@@ -1863,7 +1884,9 @@ void loop() {
   
 #ifdef DISPLAY_CLASS
   static unsigned long last_display_update = 0;
-  if (millis() - last_display_update > 500) {  // Update display every 500ms
+  // Update more frequently when sending (to show status changes)
+  unsigned long update_interval = the_mesh.isSending() ? 200 : 500;
+  if (millis() - last_display_update > update_interval) {
     the_mesh.updateDisplay();
     last_display_update = millis();
   }
