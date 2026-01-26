@@ -258,6 +258,62 @@ class MyMesh : public BaseChatMesh, ContactVisitor {
     }
   }
 
+#ifdef DISPLAY_CLASS
+public:
+  void updateDisplay() {
+    if (!display.isOn()) return;
+    
+    display.startFrame();
+    display.setTextSize(1);
+    display.setColor(DisplayDriver::LIGHT);
+    
+    // Line 1: Node name (ellipsize if too long for 128px width)
+    display.drawTextEllipsized(0, 0, display.width(), _prefs.node_name);
+    
+    // Line 2: Contacts count
+    char buf[32];
+    snprintf(buf, sizeof(buf), "Contacts: %d", getNumContacts());
+    display.setCursor(0, 8);
+    display.print(buf);
+    
+    // Line 3: Current recipient (ellipsize if too long)
+    if (curr_recipient) {
+      snprintf(buf, sizeof(buf), "To: %s", curr_recipient->name);
+      display.drawTextEllipsized(0, 16, display.width(), buf);
+    } else {
+      display.setCursor(0, 16);
+      display.print("No recipient");
+    }
+    
+    // Line 4: Signal strength or last message status
+    display.setCursor(0, 24);
+    if (last_snr != 0) {
+      snprintf(buf, sizeof(buf), "SNR: %.1fdB", last_snr);
+      display.print(buf);
+    } else {
+      display.print("Ready");
+    }
+    
+    // Line 5: Radio info (freq)
+    display.setCursor(0, 32);
+    snprintf(buf, sizeof(buf), "%.1f MHz", _prefs.freq);
+    display.print(buf);
+    
+    // Line 6: Status line (sending, etc.)
+    display.setCursor(0, 40);
+    if (pending_message[0] != 0 && expected_ack_crc != 0) {
+      display.print("Sending...");
+    } else if (expected_ack_crc != 0) {
+      display.print("Waiting ACK...");
+    } else {
+      display.print("Idle");
+    }
+    
+    display.endFrame();
+  }
+protected:
+#endif
+
   void clearCurrentLine() {
     if (_prefs.use_ansi_colors) {
       SerialPort.print("\r\033[K");  // Move to start of line and clear it (ANSI)
@@ -474,6 +530,9 @@ class MyMesh : public BaseChatMesh, ContactVisitor {
     if (send_attempt == 0) {
       showPromptWithBuffer();
     }
+#ifdef DISPLAY_CLASS
+    updateDisplay();
+#endif
   }
 
   // ============================================================================
@@ -689,6 +748,9 @@ class MyMesh : public BaseChatMesh, ContactVisitor {
       curr_recipient = &public_pseudo;
       SerialPort.println("   To: Public channel");
       updateTerminalTitle();
+#ifdef DISPLAY_CLASS
+      updateDisplay();
+#endif
       return;
     }
     
@@ -697,6 +759,9 @@ class MyMesh : public BaseChatMesh, ContactVisitor {
     if (curr_recipient) {
       SerialPort.printf("   To: %s\n", curr_recipient->name);
       updateTerminalTitle();
+#ifdef DISPLAY_CLASS
+      updateDisplay();
+#endif
     } else {
       SerialPort.printf("   ERROR: '%s' not found\n", name);
     }
@@ -1195,6 +1260,9 @@ protected:
     
     saveContacts();
     showPromptWithBuffer();  // Re-display prompt and any typed text
+#ifdef DISPLAY_CLASS
+    updateDisplay();
+#endif
   }
 
   void onContactPathUpdated(const ContactInfo& contact) override {
@@ -1216,6 +1284,9 @@ protected:
       expected_ack_crc = 0;  // reset our expected hash, now that we have received ACK
       pending_message[0] = 0;  // Clear pending message - successfully sent!
       showPromptWithBuffer();  // Re-display prompt and any typed text
+#ifdef DISPLAY_CLASS
+      updateDisplay();
+#endif
       return NULL;  // TODO: really should return ContactInfo pointer 
     }
 
@@ -1265,6 +1336,9 @@ protected:
     }
     
     showPromptWithBuffer();  // Re-display prompt and any typed text
+#ifdef DISPLAY_CLASS
+    updateDisplay();
+#endif
   }
 
   void onCommandDataRecv(const ContactInfo& from, mesh::Packet* pkt, uint32_t sender_timestamp, const char *text) override {
@@ -1746,6 +1820,16 @@ void setup() {
 
   board.begin();
 
+#ifdef DISPLAY_CLASS
+  if (display.begin()) {
+    display.turnOn();
+    display.startFrame();
+    display.setCursor(0, 0);
+    display.print("Initializing...");
+    display.endFrame();
+  }
+#endif
+
   if (!radio_init()) { halt(); }
 
   fast_rng.begin(radio_get_rng_seed());
@@ -1767,9 +1851,21 @@ void setup() {
   radio_set_tx_power(the_mesh.getTxPowerPref());
 
   the_mesh.showWelcome();
+
+#ifdef DISPLAY_CLASS
+  the_mesh.updateDisplay();
+#endif
 }
 
 void loop() {
   the_mesh.loop();
   rtc_clock.tick();
+  
+#ifdef DISPLAY_CLASS
+  static unsigned long last_display_update = 0;
+  if (millis() - last_display_update > 500) {  // Update display every 500ms
+    the_mesh.updateDisplay();
+    last_display_update = millis();
+  }
+#endif
 }
