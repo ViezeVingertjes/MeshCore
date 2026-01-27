@@ -90,6 +90,9 @@ protected:
 
   void resetContacts() { num_contacts = 0; }
 
+  /** Index of a non-favorite with oldest last_advert_timestamp, or -1 if all are favorites. */
+  int findEvictionCandidate() const;
+
   // 'UI' concepts, for sub-classes to implement
   virtual bool isAutoAddEnabled() const { return true; }
   virtual void onDiscoveredContact(ContactInfo& contact, bool is_new, uint8_t path_len, const uint8_t* path) = 0;

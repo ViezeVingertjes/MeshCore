@@ -105,19 +105,21 @@ void BaseChatMesh::onAdvertRecv(mesh::Packet* packet, const mesh::Identity& id, 
     }
 
     is_new = true;
-    if (num_contacts < MAX_CONTACTS) {
-      from = &contacts[num_contacts++];
-      from->id = id;
-      from->out_path_len = -1;  // initially out_path is unknown
-      from->gps_lat = 0;   // initially unknown GPS loc
-      from->gps_lon = 0;
-      from->sync_since = 0;
-
-      from->shared_secret_valid = false;  // ecdh shared_secret will be calculated later on demand  
-    } else {
-      MESH_DEBUG_PRINTLN("onAdvertRecv: contacts table is full!");
-      return;
+    if (num_contacts >= MAX_CONTACTS) {
+      int idx = findEvictionCandidate();
+      if (idx < 0) {
+        MESH_DEBUG_PRINTLN("onAdvertRecv: contacts table is full (all favorites?)!");
+        return;
+      }
+      removeContact(contacts[idx]);
     }
+    from = &contacts[num_contacts++];
+    from->id = id;
+    from->out_path_len = -1;
+    from->gps_lat = 0;
+    from->gps_lon = 0;
+    from->sync_since = 0;
+    from->shared_secret_valid = false;
   }
 
   // update
@@ -696,15 +698,29 @@ ContactInfo* BaseChatMesh::lookupContactByPubKey(const uint8_t* pub_key, int pre
   return NULL;  // not found
 }
 
-bool BaseChatMesh::addContact(const ContactInfo& contact) {
-  if (num_contacts < MAX_CONTACTS) {
-    auto dest = &contacts[num_contacts++];
-    *dest = contact;
-
-    dest->shared_secret_valid = false; // mark shared_secret as needing calculation
-    return true;  // success
+int BaseChatMesh::findEvictionCandidate() const {
+  int cand = -1;
+  uint32_t oldest = 0;  // pick non-favorite with smallest last_advert_timestamp
+  for (int i = 0; i < num_contacts; i++) {
+    if (contacts[i].flags & CONTACT_FLAG_FAVORITE) continue;
+    if (cand < 0 || contacts[i].last_advert_timestamp < oldest) {
+      cand = i;
+      oldest = contacts[i].last_advert_timestamp;
+    }
   }
-  return false;
+  return cand;
+}
+
+bool BaseChatMesh::addContact(const ContactInfo& contact) {
+  if (num_contacts >= MAX_CONTACTS) {
+    int idx = findEvictionCandidate();
+    if (idx < 0) return false;  // all favorites, cannot make room
+    removeContact(contacts[idx]);
+  }
+  auto dest = &contacts[num_contacts++];
+  *dest = contact;
+  dest->shared_secret_valid = false;
+  return true;
 }
 
 bool BaseChatMesh::removeContact(ContactInfo& contact) {

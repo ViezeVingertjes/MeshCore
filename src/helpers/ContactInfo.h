@@ -3,11 +3,13 @@
 #include <Arduino.h>
 #include <Mesh.h>
 
+#define CONTACT_FLAG_FAVORITE  0x01
+
 struct ContactInfo {
   mesh::Identity id;
   char name[32];
   uint8_t type;   // on of ADV_TYPE_*
-  uint8_t flags;
+  uint8_t flags;  // CONTACT_FLAG_FAVORITE, etc.
   int8_t out_path_len;
   mutable bool shared_secret_valid; // flag to indicate if shared_secret has been calculated
   uint8_t out_path[MAX_PATH_SIZE];

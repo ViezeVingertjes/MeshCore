@@ -496,10 +496,11 @@ protected:
     if (is_number) {
       int index = atoi(name_or_index) - 1;  // Convert to 0-based index
       
-      // Build sorted index array (minimal stack usage)
+      // Build sorted index array (favorites first, then by last seen)
       struct ContactEntry {
         uint8_t idx;
         uint32_t timestamp;
+        uint8_t flags;
       };
       ContactEntry entries[MAX_CONTACTS];
       int contact_count = 0;
@@ -509,14 +510,18 @@ protected:
         if (getContactByIdx(i, c)) {
           entries[contact_count].idx = i;
           entries[contact_count].timestamp = c.last_advert_timestamp;
+          entries[contact_count].flags = c.flags;
           contact_count++;
         }
       }
       
-      // Sort by last seen (most recent first)
+      // Sort: favorites first, then by last seen (most recent first)
       for (int i = 0; i < contact_count - 1; i++) {
         for (int j = i + 1; j < contact_count; j++) {
-          if (entries[j].timestamp > entries[i].timestamp) {
+          int i_fav = (entries[i].flags & CONTACT_FLAG_FAVORITE) ? 1 : 0;
+          int j_fav = (entries[j].flags & CONTACT_FLAG_FAVORITE) ? 1 : 0;
+          bool swap = (j_fav > i_fav) || (j_fav == i_fav && entries[j].timestamp > entries[i].timestamp);
+          if (swap) {
             ContactEntry temp = entries[i];
             entries[i] = entries[j];
             entries[j] = temp;
@@ -677,20 +682,22 @@ protected:
   void cmdList(int n) {
     SerialPort.println();
     
-    // Build array of contact indices with timestamps (minimal stack usage)
+    // Build array of contact indices with timestamps and flags
     struct ContactEntry {
       uint8_t idx;
       uint32_t timestamp;
+      uint8_t flags;
     };
     ContactEntry entries[MAX_CONTACTS];
     int contact_count = 0;
     
-    // Collect contact indices and timestamps
+    // Collect contact indices, timestamps, and flags
     for (uint32_t i = 0; i < MAX_CONTACTS && contact_count < MAX_CONTACTS; i++) {
       ContactInfo c;
       if (getContactByIdx(i, c)) {
         entries[contact_count].idx = i;
         entries[contact_count].timestamp = c.last_advert_timestamp;
+        entries[contact_count].flags = c.flags;
         contact_count++;
       }
     }
@@ -700,10 +707,13 @@ protected:
       return;
     }
     
-    // Sort by last seen (most recent first)
+    // Sort: favorites first, then by last seen (most recent first)
     for (int i = 0; i < contact_count - 1; i++) {
       for (int j = i + 1; j < contact_count; j++) {
-        if (entries[j].timestamp > entries[i].timestamp) {
+        int i_fav = (entries[i].flags & CONTACT_FLAG_FAVORITE) ? 1 : 0;
+        int j_fav = (entries[j].flags & CONTACT_FLAG_FAVORITE) ? 1 : 0;
+        bool swap = (j_fav > i_fav) || (j_fav == i_fav && entries[j].timestamp > entries[i].timestamp);
+        if (swap) {
           ContactEntry temp = entries[i];
           entries[i] = entries[j];
           entries[j] = temp;
@@ -711,7 +721,7 @@ protected:
       }
     }
     
-    // Display contacts with numbers
+    // Display contacts with numbers; * for favorites
     int display_count = (n > 0 && n < contact_count) ? n : contact_count;
     for (int i = 0; i < display_count; i++) {
       ContactInfo c;
@@ -719,9 +729,9 @@ protected:
         char tmp[40];
         int32_t secs = c.last_advert_timestamp - getRTCClock()->getCurrentTime();
         AdvertTimeHelper::formatRelativeTimeDiff(tmp, secs, false);
-        SerialPort.printf("   %s[%d]%s %s - %s\n", 
+        SerialPort.printf("   %s[%d]%s %s%s - %s\n", 
                       ansi(ANSI_DIM), i + 1, ansi(ANSI_RESET),
-                      c.name, tmp);
+                      c.name, (c.flags & CONTACT_FLAG_FAVORITE) ? " *" : "", tmp);
       }
     }
   }
@@ -896,6 +906,22 @@ protected:
     SerialPort.printf("   Renamed to %s\n", contact->name);
   }
 
+  void cmdFav(const char* name_or_index) {
+    while (*name_or_index == ' ') name_or_index++;
+    if (!*name_or_index) {
+      printError("Usage: favorite <name|#>");
+      return;
+    }
+    ContactInfo* contact = resolveContact(name_or_index);
+    if (!contact) {
+      SerialPort.printf("   ERROR: Contact '%s' not found\n", name_or_index);
+      return;
+    }
+    contact->flags ^= CONTACT_FLAG_FAVORITE;
+    saveContacts();
+    SerialPort.printf("   %s %s\n", (contact->flags & CONTACT_FLAG_FAVORITE) ? "Favorited" : "Unfavorited", contact->name);
+  }
+
   void cmdCard() {
     SerialPort.printf("Hello %s\n", _prefs.node_name);
     auto pkt = createSelfAdvert(_prefs.node_name, _prefs.node_lat, _prefs.node_lon);
@@ -976,6 +1002,7 @@ protected:
     SerialPort.println("  info             Show contact details");
     SerialPort.println("  delete <name>    Remove contact");
     SerialPort.println("  rename <o> <n>   Rename contact");
+    SerialPort.println("  favorite <name|#>  Toggle favorite (star) on contact");
     SerialPort.println();
     SerialPort.printf("%sNetwork:%s\n", ansi(ANSI_CYAN), ansi(ANSI_RESET));
     SerialPort.println("  advert           Send advertisement");
@@ -1775,6 +1802,8 @@ public:
     // Contact management
     else if (memcmp(command, "delete ", 7) == 0) {
       cmdDelete(&command[7]);
+    } else if (memcmp(command, "favorite ", 9) == 0) {
+      cmdFav(&command[9]);
     } else if (memcmp(command, "rename ", 7) == 0) {
       const char* args = &command[7];
       const char* space = strchr(args, ' ');
