@@ -174,6 +174,10 @@ public:
   uint32_t getNumSentDirect() const { return n_sent_direct; }
   uint32_t getNumRecvFlood() const { return n_recv_flood; }
   uint32_t getNumRecvDirect() const { return n_recv_direct; }
+
+  /** \returns true if the radio is currently transmitting a packet (own or repeating/forwarding). */
+  bool isTransmitting() const { return outbound != NULL; }
+
   void resetStats() {
     n_sent_flood = n_sent_direct = n_recv_flood = n_recv_direct = 0;
     _err_flags = 0;

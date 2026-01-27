@@ -347,16 +347,13 @@ public:
     snprintf(buf, sizeof(buf), "TX:%s RX:%s", tx_buf, rx_buf);
     display.print(buf);
     
-    // Line 6: Status line (sending, receiving, idle)
+    // Line 6: Status line (transmitting, receiving, idle)
     display.setCursor(0, 40);
     unsigned long now = millis();
-    if (pending_message[0] != 0 && expected_ack_crc != 0) {
-      display.print("Sending...");
-    } else if (expected_ack_crc != 0) {
-      display.print("Waiting ACK...");
-    } else if (public_send_time != 0 && (now - public_send_time) < 2000) {
-      // Show "Sending..." for 2 seconds after public message
-      display.print("Sending...");
+    if (isSending() || isTransmitting()) {
+      // isSending: our own msg (pending, waiting ack, or just sent public)
+      // isTransmitting: radio is TXing a packet (own or repeating/forwarding)
+      display.print("Transmitting...");
     } else if (last_receive_time != 0 && (now - last_receive_time) < 2000) {
       // Show "Receiving..." for 2 seconds after receiving a message
       display.print("Receiving...");
@@ -1985,8 +1982,8 @@ void loop() {
   
 #ifdef DISPLAY_CLASS
   static unsigned long last_display_update = 0;
-  // Update more frequently when sending or receiving (to show status changes)
-  unsigned long update_interval = (the_mesh.isSending() || the_mesh.isReceiving()) ? 200 : 500;
+  // Update more frequently when sending, receiving, or transmitting (e.g. repeating)
+  unsigned long update_interval = (the_mesh.isSending() || the_mesh.isReceiving() || the_mesh.isTransmitting()) ? 200 : 500;
   if (millis() - last_display_update > update_interval) {
     the_mesh.updateDisplay();
     last_display_update = millis();
