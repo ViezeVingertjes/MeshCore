@@ -93,9 +93,6 @@
 // Key generation timeout
 #define KEY_GEN_TIMEOUT_MS  30000
 
-// Maximum reasonable clock value (year ~2100)
-#define MAX_REASONABLE_TIMESTAMP  4102444800UL
-
 // Message history
 #define MAX_MESSAGE_HISTORY  10
 
@@ -203,6 +200,7 @@ class MyMesh : public BaseChatMesh, ContactVisitor {
   #define TIME_SAMPLE_SIZE 5
   uint32_t time_samples[TIME_SAMPLE_SIZE];
   uint8_t time_sample_count;
+  bool time_has_been_synced;  // false until setCurrentTime() has been called (autoSyncTime or setClock)
 
   // ============================================================================
   // HELPER METHODS
@@ -367,10 +365,10 @@ public:
       display.print("Idle");
     }
     
-    // Line 7: Current datetime (to verify time sync) - full date and time
+    // Line 7: Current datetime - show --/--/-- --:--:-- until we have synced at least once
     display.setCursor(0, 56);
-    uint32_t now_epoch = getRTCClock()->getCurrentTime();
-    if (now_epoch >= 1600000000) {  // Valid timestamp (after Sept 2020)
+    if (time_has_been_synced) {
+      uint32_t now_epoch = getRTCClock()->getCurrentTime();
       DateTime dt = DateTime(now_epoch);
       snprintf(buf, sizeof(buf), "%02d/%02d/%02d %02d:%02d:%02d", 
                dt.month(), dt.day(), dt.year() % 100, dt.hour(), dt.minute(), dt.second());
@@ -770,7 +768,7 @@ protected:
   void cmdSetTime(const char* time_str) {
     // Try to parse as epoch first
     uint32_t secs = _atoi(time_str);
-    if (secs > 1600000000) {  // Valid epoch timestamp
+    if (strspn(time_str, "0123456789") == strlen(time_str) && strlen(time_str) >= 9) {
       setClock(secs);
       return;
     }
@@ -1193,25 +1191,9 @@ protected:
   }
 
   void setClock(uint32_t timestamp) {
-    uint32_t curr = getRTCClock()->getCurrentTime();
-    
-    // Validate timestamp is reasonable
-    if (timestamp > MAX_REASONABLE_TIMESTAMP) {
-      SerialPort.println("   (ERR: timestamp too far in future, rejected)");
-      return;
-    }
-    
-    if (timestamp < 1600000000) {  // Before Sept 2020
-      SerialPort.println("   (ERR: timestamp too old, rejected)");
-      return;
-    }
-    
-    if (timestamp > curr) {
-      getRTCClock()->setCurrentTime(timestamp);
-      SerialPort.println("   (OK - clock set!)");
-    } else {
-      SerialPort.println("   (ERR: clock cannot go backwards)");
-    }
+    getRTCClock()->setCurrentTime(timestamp);
+    time_has_been_synced = true;
+    SerialPort.println("   (OK - clock set!)");
   }
 
   void importCard(const char* command) {
@@ -1297,16 +1279,6 @@ protected:
   void autoSyncTime(uint32_t sender_timestamp) {
     uint32_t our_time = getRTCClock()->getCurrentTime();
     
-    // Validate timestamp is reasonable
-    if (sender_timestamp < 1600000000 || sender_timestamp > MAX_REASONABLE_TIMESTAMP) {
-      return;  // Reject clearly invalid timestamps
-    }
-    
-    // Don't sync if sender's time is too far in the past (more than 1 hour behind)
-    if (sender_timestamp + 3600 < our_time) {
-      return;
-    }
-    
     // Add to time samples
     time_samples[time_sample_count % TIME_SAMPLE_SIZE] = sender_timestamp;
     time_sample_count++;
@@ -1334,12 +1306,13 @@ protected:
     
     uint32_t median_time = sorted[num_samples / 2];
     
-    // Only sync if median is newer than our time and difference is significant (>10 sec)
-    if (median_time > our_time + 10) {
+    // Only sync if median differs from our time significantly (>2 sec)
+    if (median_time != our_time && (median_time > our_time ? (median_time - our_time) > 2u : (our_time - median_time) > 2u)) {
       getRTCClock()->setCurrentTime(median_time);
+      time_has_been_synced = true;
       clearCurrentLine();
-      SerialPort.printf("%s[Time synced: +%d sec from %d samples]%s\n", 
-                    ansi(ANSI_DIM), median_time - our_time, num_samples, ansi(ANSI_RESET));
+      SerialPort.printf("%s[Time synced: %+d sec from %d samples]%s\n", 
+                    ansi(ANSI_DIM), (int32_t)(median_time - our_time), num_samples, ansi(ANSI_RESET));
       showPromptWithBuffer();
       
       // Reset sample count after syncing to get fresh samples
@@ -1608,6 +1581,7 @@ public:
     last_receive_time = 0;
     time_sample_count = 0;
     memset(time_samples, 0, sizeof(time_samples));
+    time_has_been_synced = false;
   }
 
   float getFreqPref() const { return _prefs.freq; }
