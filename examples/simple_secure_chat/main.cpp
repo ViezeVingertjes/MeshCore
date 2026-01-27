@@ -770,9 +770,8 @@ protected:
   void cmdCls() {
     if (_prefs.use_ansi_colors) {
       SerialPort.print("\033[2J\033[H");  // Clear screen, cursor home (ANSI)
-    } else {
-      for (int i = 0; i < 24; i++) SerialPort.println();  // Dumb-terminal: scroll old content away
     }
+    // else: no-op (avoid sending escape sequences to non-ANSI clients)
   }
 
   void cmdClock() {
