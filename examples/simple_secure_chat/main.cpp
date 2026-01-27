@@ -767,6 +767,14 @@ protected:
     }
   }
 
+  void cmdCls() {
+    if (_prefs.use_ansi_colors) {
+      SerialPort.print("\033[2J\033[H");  // Clear screen, cursor home (ANSI)
+    } else {
+      for (int i = 0; i < 24; i++) SerialPort.println();  // Dumb-terminal: scroll old content away
+    }
+  }
+
   void cmdClock() {
     uint32_t now = getRTCClock()->getCurrentTime();
     DateTime dt = DateTime(now);
@@ -1020,6 +1028,7 @@ protected:
     SerialPort.printf("%sOther:%s\n", ansi(ANSI_CYAN), ansi(ANSI_RESET));
     SerialPort.println("  history          Message history");
     SerialPort.println("  clock            Show time");
+    SerialPort.println("  cls              Clear screen");
     SerialPort.println("  status           System status");
     SerialPort.println("  radio            Radio status & signal");
     SerialPort.println("  reboot           Restart device");
@@ -1786,6 +1795,8 @@ public:
     // Time commands
     else if (strcmp(command, "clock") == 0) {
       cmdClock();
+    } else if (strcmp(command, "cls") == 0) {
+      cmdCls();
     }
     // Recipient commands
     else if (memcmp(command, "to ", 3) == 0) {
