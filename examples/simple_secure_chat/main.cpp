@@ -99,14 +99,15 @@
 // Message history
 #define MAX_MESSAGE_HISTORY  10
 
-// ANSI color codes (now runtime configurable)
+// ANSI escape codes (runtime toggle via set ansi on/off). Most serial terminals support these.
 #define ANSI_RESET      "\033[0m"
 #define ANSI_BOLD       "\033[1m"
 #define ANSI_DIM        "\033[2m"
+#define ANSI_UNDERLINE  "\033[4m"   // available for links/headers if needed
 #define ANSI_RED        "\033[31m"
 #define ANSI_GREEN      "\033[32m"
 #define ANSI_YELLOW     "\033[33m"
-#define ANSI_BLUE       "\033[34m"
+#define ANSI_BLUE       "\033[34m"  // available (e.g. alternate accent)
 #define ANSI_MAGENTA    "\033[35m"
 #define ANSI_CYAN       "\033[36m"
 #define ANSI_BELL       "\007"
@@ -247,8 +248,11 @@ class MyMesh : public BaseChatMesh, ContactVisitor {
   }
 
   void printError(const char* msg) {
+    SerialPort.print(ansi(ANSI_RED));
     SerialPort.print("   ERROR: ");
-    SerialPort.println(msg);
+    SerialPort.print(msg);
+    SerialPort.print(ansi(ANSI_RESET));
+    SerialPort.println();
   }
 
   void printSuccess(const char* msg) {
@@ -266,7 +270,7 @@ class MyMesh : public BaseChatMesh, ContactVisitor {
       SerialPort.printf("%s[%s]%s > ", 
                     ansi(ANSI_BOLD), curr_recipient->name, ansi(ANSI_RESET));
     } else {
-      SerialPort.print("[no recipient] > ");
+      SerialPort.printf("%s[no recipient]%s > ", ansi(ANSI_DIM), ansi(ANSI_RESET));
     }
   }
 
@@ -371,11 +375,11 @@ public:
     uint32_t now_epoch = getRTCClock()->getCurrentTime();
     if (now_epoch >= 1600000000) {  // Valid timestamp (after Sept 2020)
       DateTime dt = DateTime(now_epoch);
-      snprintf(buf, sizeof(buf), "%02d/%02d/%04d %02d:%02d:%02d", 
-               dt.month(), dt.day(), dt.year(), dt.hour(), dt.minute(), dt.second());
+      snprintf(buf, sizeof(buf), "%02d/%02d/%02d %02d:%02d:%02d", 
+               dt.month(), dt.day(), dt.year() % 100, dt.hour(), dt.minute(), dt.second());
       display.print(buf);
     } else {
-      display.print("--/--/---- --:--:--");
+      display.print("--/--/-- --:--:--");
     }
     
     display.endFrame();
@@ -818,7 +822,7 @@ protected:
       StrHelper::strncpy(public_pseudo.name, "Public", sizeof(public_pseudo.name));
       public_pseudo.type = ADV_TYPE_ROOM;  // Public channel is a "room"
       curr_recipient = &public_pseudo;
-      SerialPort.println("   To: Public channel");
+      SerialPort.printf("   To: %sPublic channel%s\n", ansi(ANSI_MAGENTA), ansi(ANSI_RESET));
       updateTerminalTitle();
 #ifdef DISPLAY_CLASS
       updateDisplay();
@@ -829,7 +833,7 @@ protected:
     // Use helper to resolve by name or index
     curr_recipient = resolveContact(name);
     if (curr_recipient) {
-      SerialPort.printf("   To: %s\n", curr_recipient->name);
+      SerialPort.printf("   To: %s%s%s\n", ansi(ANSI_BOLD), curr_recipient->name, ansi(ANSI_RESET));
       updateTerminalTitle();
 #ifdef DISPLAY_CLASS
       updateDisplay();
@@ -841,9 +845,9 @@ protected:
 
   void cmdShowRecipient() {
     if (curr_recipient) {
-      SerialPort.printf("   To: %s\n", curr_recipient->name);
+      SerialPort.printf("   To: %s%s%s\n", ansi(ANSI_BOLD), curr_recipient->name, ansi(ANSI_RESET));
     } else {
-      SerialPort.println("   (none - use 'to <name>')");
+      SerialPort.printf("   %s(none - use 'to <name>')%s\n", ansi(ANSI_DIM), ansi(ANSI_RESET));
     }
   }
 
@@ -910,9 +914,8 @@ protected:
     
     if (len > 0 && len <= sizeof(tmp_buf)) {
       mesh::Utils::toHex(hex_buf, tmp_buf, len);
-      SerialPort.println("Your MeshCore biz card:");
-      SerialPort.print("meshcore://");
-      
+      SerialPort.printf("%sYour MeshCore biz card:%s\n", ansi(ANSI_BOLD), ansi(ANSI_RESET));
+      SerialPort.printf("%smeshcore://%s", ansi(ANSI_DIM), ansi(ANSI_RESET));
       // Make it a clickable hyperlink if ANSI is enabled
       char full_url[600];
       snprintf(full_url, sizeof(full_url), "meshcore://%s", hex_buf);
@@ -927,14 +930,14 @@ protected:
   void cmdInfo() {
     if (!requireRecipient()) return;
 
-    SerialPort.printf("Contact: %s\n", curr_recipient->name);
-    SerialPort.printf("   Type: %s\n", getTypeName(curr_recipient->type));
-    SerialPort.print("   Public key: "); 
-    mesh::Utils::printHex(SerialPort, curr_recipient->id.pub_key, PUB_KEY_SIZE); 
+    SerialPort.printf("Contact: %s%s%s\n", ansi(ANSI_BOLD), curr_recipient->name, ansi(ANSI_RESET));
+    SerialPort.printf("%s   Type:%s %s\n", ansi(ANSI_DIM), ansi(ANSI_RESET), getTypeName(curr_recipient->type));
+    SerialPort.printf("%s   Public key:%s ", ansi(ANSI_DIM), ansi(ANSI_RESET));
+    mesh::Utils::printHex(SerialPort, curr_recipient->id.pub_key, PUB_KEY_SIZE);
     SerialPort.println();
-    SerialPort.printf("   Path length: %d hops\n", curr_recipient->out_path_len);
+    SerialPort.printf("%s   Path length:%s %d hops\n", ansi(ANSI_DIM), ansi(ANSI_RESET), curr_recipient->out_path_len);
     if (curr_recipient->gps_lat != 0 || curr_recipient->gps_lon != 0) {
-      SerialPort.printf("   GPS: %.6f, %.6f\n", curr_recipient->gps_lat, curr_recipient->gps_lon);
+      SerialPort.printf("%s   GPS:%s %.6f, %.6f\n", ansi(ANSI_DIM), ansi(ANSI_RESET), curr_recipient->gps_lat, curr_recipient->gps_lon);
     }
   }
 
@@ -950,13 +953,17 @@ protected:
   }
 
   void cmdStatus() {
-    SerialPort.printf("Node: %s\n", _prefs.node_name);
+    SerialPort.printf("Node: %s%s%s\n", ansi(ANSI_BOLD), _prefs.node_name, ansi(ANSI_RESET));
     SerialPort.printf("Contacts: %d\n", getNumContacts());
-    SerialPort.printf("ANSI colors: %s\n", _prefs.use_ansi_colors ? "ON" : "OFF");
+    if (_prefs.use_ansi_colors) {
+      SerialPort.printf("ANSI colors: %sON%s\n", ansi(ANSI_GREEN), ansi(ANSI_RESET));
+    } else {
+      SerialPort.println("ANSI colors: OFF");
+    }
     if (_prefs.node_lat != 0 || _prefs.node_lon != 0) {
       SerialPort.printf("GPS: %.6f, %.6f\n", _prefs.node_lat, _prefs.node_lon);
     }
-    SerialPort.println("(Use 'radio' for RF params)");
+    SerialPort.printf("%s(Use 'radio' for RF params)%s\n", ansi(ANSI_DIM), ansi(ANSI_RESET));
   }
 
   void cmdHelp() {
@@ -1455,7 +1462,7 @@ protected:
     last_snr = radio_driver.getLastSNR();
     
     clearCurrentLine();
-    SerialPort.printf("!%s %s\n", from.name, text);
+    SerialPort.printf("%s!%s%s %s\n", ansi(ANSI_YELLOW), from.name, ansi(ANSI_RESET), text);
     showPromptWithBuffer();
   }
   
@@ -1473,7 +1480,7 @@ protected:
     last_snr = radio_driver.getLastSNR();
     
     clearCurrentLine();
-    SerialPort.printf("+%s %s\n", from.name, text);
+    SerialPort.printf("%s+%s%s %s\n", ansi(ANSI_GREEN), from.name, ansi(ANSI_RESET), text);
     showPromptWithBuffer();
   }
 
@@ -1715,8 +1722,8 @@ public:
     SerialPort.printf("%s=== MeshCore Secure Chat ===%s\n", ansi(ANSI_BOLD), ansi(ANSI_RESET));
     SerialPort.println(FIRMWARE_VER_TEXT);
     SerialPort.println();
-    SerialPort.printf("Name: %s\n", _prefs.node_name);
-    SerialPort.print("Key: ");
+    SerialPort.printf("Name: %s%s%s\n", ansi(ANSI_BOLD), _prefs.node_name, ansi(ANSI_RESET));
+    SerialPort.printf("%sKey:%s ", ansi(ANSI_DIM), ansi(ANSI_RESET));
     mesh::Utils::printHex(SerialPort, self_id.pub_key, PUB_KEY_SIZE);
     SerialPort.println();
     SerialPort.printf("Contacts: %d\n", getNumContacts());
