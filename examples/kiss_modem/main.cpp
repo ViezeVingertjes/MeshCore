@@ -62,6 +62,18 @@ void onGetStats(uint32_t* rx, uint32_t* tx, uint32_t* errors) {
   *errors = radio_driver.getPacketsRecvErrors();
 }
 
+void onSendPacket(const uint8_t* data, uint16_t len) {
+  radio_driver.startSendRaw(data, len);
+}
+
+bool onIsSendComplete() {
+  return radio_driver.isSendComplete();
+}
+
+void onSendFinished() {
+  radio_driver.onSendFinished();
+}
+
 void setup() {
   board.begin();
 
@@ -86,31 +98,24 @@ void setup() {
   modem->setTxPowerCallback(onSetTxPower);
   modem->setGetCurrentRssiCallback(onGetCurrentRssi);
   modem->setGetStatsCallback(onGetStats);
+  modem->setSendPacketCallback(onSendPacket);
+  modem->setIsSendCompleteCallback(onIsSendComplete);
+  modem->setOnSendFinishedCallback(onSendFinished);
   modem->begin();
 }
 
 void loop() {
   modem->loop();
 
-  uint8_t packet[KISS_MAX_PACKET_SIZE];
-  uint16_t len;
-  
-  if (modem->getPacketToSend(packet, &len)) {
-    radio_driver.startSendRaw(packet, len);
-    while (!radio_driver.isSendComplete()) {
-      delay(1);
-    }
-    radio_driver.onSendFinished();
-    modem->onTxComplete(true);
-  }
+  if (!modem->isTxBusy()) {
+    uint8_t rx_buf[256];
+    int rx_len = radio_driver.recvRaw(rx_buf, sizeof(rx_buf));
 
-  uint8_t rx_buf[256];
-  int rx_len = radio_driver.recvRaw(rx_buf, sizeof(rx_buf));
-  
-  if (rx_len > 0) {
-    int8_t snr = (int8_t)(radio_driver.getLastSNR() * 4);
-    int8_t rssi = (int8_t)radio_driver.getLastRSSI();
-    modem->onPacketReceived(snr, rssi, rx_buf, rx_len);
+    if (rx_len > 0) {
+      int8_t snr = (int8_t)(radio_driver.getLastSNR() * 4);
+      int8_t rssi = (int8_t)radio_driver.getLastRSSI();
+      modem->onPacketReceived(snr, rssi, rx_buf, rx_len);
+    }
   }
 
   radio_driver.loop();
