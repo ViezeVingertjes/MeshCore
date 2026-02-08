@@ -330,6 +330,8 @@ void ge_p3_tobytes(unsigned char *s, const ge_p3 *h) {
 }
 
 
+#ifndef ED25519_NO_PRECOMP
+
 static unsigned char equal(signed char b, signed char c) {
     unsigned char ub = b;
     unsigned char uc = c;
@@ -432,6 +434,62 @@ void ge_scalarmult_base(ge_p3 *h, const unsigned char *a) {
         ge_p1p1_to_p3(h, &r);
     }
 }
+
+#else /* ED25519_NO_PRECOMP */
+
+/*
+ * Compact ge_scalarmult_base: h = a * B
+ *
+ * Uses the small Bi[8] lookup table (B, 3B, 5B, ..., 15B in precomp form)
+ * with a sliding-window algorithm instead of the large base[32][8] table.
+ * Same approach as the base-point part of ge_double_scalarmult_vartime.
+ * Variable-time; slower than the precomputed-table version.
+ */
+void ge_scalarmult_base(ge_p3 *h, const unsigned char *a) {
+    signed char e[256];
+    ge_p1p1 t;
+    ge_p3 u;
+    ge_p2 r;
+    int i;
+
+    slide(e, a);
+
+    ge_p2_0(&r);
+
+    for (i = 255; i >= 0; --i) {
+        if (e[i]) {
+            break;
+        }
+    }
+
+    /* Zero scalar: return the identity point */
+    if (i < 0) {
+        ge_p3_0(h);
+        return;
+    }
+
+    for (; i >= 0; --i) {
+        ge_p2_dbl(&t, &r);
+
+        if (e[i] > 0) {
+            ge_p1p1_to_p3(&u, &t);
+            ge_madd(&t, &u, &Bi[e[i] / 2]);
+        } else if (e[i] < 0) {
+            ge_p1p1_to_p3(&u, &t);
+            ge_msub(&t, &u, &Bi[(-e[i]) / 2]);
+        }
+
+        /* On the last iteration, convert to ge_p3 (gives us T for free).
+           Otherwise, stay in ge_p2 for efficient doubling. */
+        if (i == 0) {
+            ge_p1p1_to_p3(h, &t);
+        } else {
+            ge_p1p1_to_p2(&r, &t);
+        }
+    }
+}
+
+#endif /* ED25519_NO_PRECOMP */
 
 
 /*
