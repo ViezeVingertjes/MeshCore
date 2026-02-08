@@ -167,12 +167,9 @@ private:
   void updateContactFromFrame(ContactInfo &contact, uint32_t& last_mod, const uint8_t *frame, int len);
   void addToOfflineQueue(const uint8_t frame[], int len);
   int getFromOfflineQueue(uint8_t frame[]);
-  int getBlobByKey(const uint8_t key[], int key_len, uint8_t dest_buf[]) override { 
-    return _store->getBlobByKey(key, key_len, dest_buf);
-  }
-  bool putBlobByKey(const uint8_t key[], int key_len, const uint8_t src_buf[], int len) override {
-    return _store->putBlobByKey(key, key_len, src_buf, len);
-  }
+  int getBlobByKey(const uint8_t key[], int key_len, uint8_t dest_buf[]) override;
+  bool putBlobByKey(const uint8_t key[], int key_len, const uint8_t src_buf[], int len) override;
+  void flushPendingBlob();
 
   void checkCLIRescueCmd();
   void checkSerialInterface();
@@ -201,6 +198,14 @@ private:
   uint8_t *sign_data;
   uint32_t sign_data_len;
   unsigned long dirty_contacts_expiry;
+  unsigned long dirty_blob_expiry;
+
+  struct PendingBlob {
+    uint8_t key[PUB_KEY_SIZE];
+    uint8_t data[MAX_TRANS_UNIT];
+    uint8_t len;
+    bool dirty;
+  } _pending_blob;
 
   TransportKey send_scope;
 

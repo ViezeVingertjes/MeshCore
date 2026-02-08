@@ -94,6 +94,7 @@
 #define DIRECT_SEND_PERHOP_FACTOR       6.0f
 #define DIRECT_SEND_PERHOP_EXTRA_MILLIS 250
 #define LAZY_CONTACTS_WRITE_DELAY       5000
+#define LAZY_BLOB_WRITE_DELAY           30000
 
 #define PUBLIC_GROUP_PSK                "izOH6cXN6mrJ5e26oRXNcg=="
 
@@ -307,6 +308,9 @@ bool MyMesh::shouldOverwriteWhenFull() const {
 }
 
 void MyMesh::onContactOverwrite(const uint8_t* pub_key) {
+    if (_pending_blob.dirty && memcmp(_pending_blob.key, pub_key, PUB_KEY_SIZE) == 0) {
+      _pending_blob.dirty = false;  // discard pending write for deleted contact
+    }
     _store->deleteBlobByKey(pub_key, PUB_KEY_SIZE); // delete from storage
   if (_serial->isConnected()) {
     out_frame[0] = PUSH_CODE_CONTACT_DELETED;
@@ -320,6 +324,39 @@ void MyMesh::onContactsFull() {
     out_frame[0] = PUSH_CODE_CONTACTS_FULL;
     _serial->writeFrame(out_frame, 1);
   }
+}
+
+void MyMesh::flushPendingBlob() {
+  if (_pending_blob.dirty) {
+    _store->putBlobByKey(_pending_blob.key, PUB_KEY_SIZE, _pending_blob.data, _pending_blob.len);
+    _pending_blob.dirty = false;
+  }
+}
+
+int MyMesh::getBlobByKey(const uint8_t key[], int key_len, uint8_t dest_buf[]) {
+  // check pending cache first
+  if (_pending_blob.dirty && memcmp(_pending_blob.key, key, PUB_KEY_SIZE) == 0) {
+    memcpy(dest_buf, _pending_blob.data, _pending_blob.len);
+    return _pending_blob.len;
+  }
+  return _store->getBlobByKey(key, key_len, dest_buf);
+}
+
+bool MyMesh::putBlobByKey(const uint8_t key[], int key_len, const uint8_t src_buf[], int len) {
+  if (len <= 0 || len > MAX_TRANS_UNIT) return false;
+
+  // flush previous pending blob if it was for a different key
+  if (_pending_blob.dirty && memcmp(_pending_blob.key, key, PUB_KEY_SIZE) != 0) {
+    flushPendingBlob();
+  }
+
+  // buffer this write
+  memcpy(_pending_blob.key, key, PUB_KEY_SIZE);
+  memcpy(_pending_blob.data, src_buf, len);
+  _pending_blob.len = (uint8_t) len;
+  _pending_blob.dirty = true;
+  dirty_blob_expiry = futureMillis(LAZY_BLOB_WRITE_DELAY);
+  return true;
 }
 
 void MyMesh::onDiscoveredContact(ContactInfo &contact, bool is_new, uint8_t path_len, const uint8_t* path) {
@@ -788,6 +825,8 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   next_ack_idx = 0;
   sign_data = NULL;
   dirty_contacts_expiry = 0;
+  dirty_blob_expiry = 0;
+  memset(&_pending_blob, 0, sizeof(_pending_blob));
   memset(advert_paths, 0, sizeof(advert_paths));
   memset(send_scope.key, 0, sizeof(send_scope.key));
 
@@ -1125,6 +1164,9 @@ void MyMesh::handleCmdFrame(size_t len) {
     uint8_t *pub_key = &cmd_frame[1];
     ContactInfo *recipient = lookupContactByPubKey(pub_key, PUB_KEY_SIZE);
     if (recipient && removeContact(*recipient)) {
+      if (_pending_blob.dirty && memcmp(_pending_blob.key, pub_key, PUB_KEY_SIZE) == 0) {
+        _pending_blob.dirty = false;  // discard pending write for deleted contact
+      }
       _store->deleteBlobByKey(pub_key, PUB_KEY_SIZE);
       dirty_contacts_expiry = futureMillis(LAZY_CONTACTS_WRITE_DELAY);
       writeOKFrame();
@@ -1274,6 +1316,7 @@ void MyMesh::handleCmdFrame(size_t len) {
     if (dirty_contacts_expiry) { // is there are pending dirty contacts write needed?
       saveContacts();
     }
+    flushPendingBlob();
     board.reboot();
   } else if (cmd_frame[0] == CMD_GET_BATT_AND_STORAGE) {
     uint8_t reply[11];
@@ -1964,6 +2007,12 @@ void MyMesh::loop() {
   if (dirty_contacts_expiry && millisHasNowPassed(dirty_contacts_expiry)) {
     saveContacts();
     dirty_contacts_expiry = 0;
+  }
+
+  // flush pending blob write
+  if (dirty_blob_expiry && millisHasNowPassed(dirty_blob_expiry)) {
+    flushPendingBlob();
+    dirty_blob_expiry = 0;
   }
 
 #ifdef DISPLAY_CLASS
