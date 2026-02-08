@@ -1,7 +1,9 @@
 #include <Arduino.h>
 #include <target.h>
 #include <helpers/ArduinoHelpers.h>
-#include <helpers/IdentityStore.h>
+#if !defined(CUBECELL_PLATFORM)
+  #include <helpers/IdentityStore.h>
+#endif
 #include "KissModem.h"
 
 #if defined(NRF52_PLATFORM)
@@ -10,6 +12,8 @@
   #include <LittleFS.h>
 #elif defined(ESP32)
   #include <SPIFFS.h>
+#elif defined(CUBECELL_PLATFORM)
+  #include <EEPROM.h>
 #endif
 #if defined(KISS_UART_RX) && defined(KISS_UART_TX)
   #include <HardwareSerial.h>
@@ -25,11 +29,45 @@ static uint32_t next_noise_floor_calib_ms = 0;
 static uint32_t next_agc_reset_ms = 0;
 
 void halt() {
+#if defined(CUBECELL_PLATFORM)
+  while (1) board.idle();
+#else
   while (1) ;
+#endif
 }
 
 void loadOrCreateIdentity() {
-#if defined(NRF52_PLATFORM)
+#if defined(CUBECELL_PLATFORM)
+  EEPROM.begin(PRV_KEY_SIZE + PUB_KEY_SIZE);
+  uint8_t id_buf[PRV_KEY_SIZE + PUB_KEY_SIZE];
+  for (size_t i = 0; i < sizeof(id_buf); i++) {
+    id_buf[i] = EEPROM.read(i);
+  }
+
+  bool valid = (id_buf[PRV_KEY_SIZE] != 0x00 && id_buf[PRV_KEY_SIZE] != 0xFF);
+  if (valid) {
+    identity.readFrom(id_buf, sizeof(id_buf));
+
+    const uint8_t test_msg[] = "selftest";
+    uint8_t test_sig[SIGNATURE_SIZE];
+    identity.sign(test_sig, test_msg, sizeof(test_msg) - 1);
+    mesh::Identity verifier(identity.pub_key);
+    if (!verifier.verify(test_sig, test_msg, sizeof(test_msg) - 1)) {
+      valid = false;
+    }
+  }
+  if (!valid) {
+    identity = radio_new_identity();
+    while (identity.pub_key[0] == 0x00 || identity.pub_key[0] == 0xFF) {
+      identity = radio_new_identity();
+    }
+    size_t written = identity.writeTo(id_buf, sizeof(id_buf));
+    for (size_t i = 0; i < written; i++) {
+      EEPROM.write(i, id_buf[i]);
+    }
+    EEPROM.commit();
+  }
+#elif defined(NRF52_PLATFORM)
   InternalFS.begin();
   IdentityStore store(InternalFS, "");
 #elif defined(ESP32)
@@ -43,6 +81,7 @@ void loadOrCreateIdentity() {
   #error "Filesystem not defined"
 #endif
 
+#if !defined(CUBECELL_PLATFORM)
   if (!store.load("_main", identity)) {
     identity = radio_new_identity();
     while (identity.pub_key[0] == 0x00 || identity.pub_key[0] == 0xFF) {
@@ -50,6 +89,7 @@ void loadOrCreateIdentity() {
     }
     store.save("_main", identity);
   }
+#endif
 }
 
 void onSetRadio(float freq, float bw, uint8_t sf, uint8_t cr) {
@@ -153,4 +193,8 @@ void loop() {
       radio_driver.loop();
     }
   }
+
+#if defined(CUBECELL_PLATFORM)
+  board.idle();
+#endif
 }
