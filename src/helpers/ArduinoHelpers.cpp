@@ -106,6 +106,11 @@ uint32_t AsconRNG::getHardwareRandom32() {
       uint32_t n = millis();
       uint32_t hardware_id_mix = stm32HardwareIdMix();
       r = (m << 16) ^ (n * 2654435761u) ^ hardware_id_mix;
+      #if defined(CoreDebug) && defined(DWT)
+        CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+        DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+        r ^= DWT->CYCCNT;
+      #endif
       break;
     }
   }
@@ -113,12 +118,17 @@ uint32_t AsconRNG::getHardwareRandom32() {
     r = RNG->DR;
   }
 #else
-  // TODO: Low entropy fallback: At this point we're desesperate
+  // Low entropy fallback: At this point we're desperate
   uint32_t m = micros();
   uint32_t n = millis();
   r = (m << 16) ^ (n * 2654435761u);
   #if defined(STM32_PLATFORM)
     r ^= stm32HardwareIdMix();
+  #endif
+  #if defined(CoreDebug) && defined(DWT)
+    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+    r ^= DWT->CYCCNT;
   #endif
 #endif
   if (_radio) {
