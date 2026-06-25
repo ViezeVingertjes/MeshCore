@@ -70,12 +70,21 @@ public:
 */
 class RadioNoiseListener : public mesh::RNG {
   PhysicalLayer* _radio;
+  mesh::RNG* _secondary;
 public:
-  RadioNoiseListener(PhysicalLayer& radio): _radio(&radio) { }
+  RadioNoiseListener(PhysicalLayer& radio, mesh::RNG* secondary = nullptr)
+    : _radio(&radio), _secondary(secondary) { }
 
   void random(uint8_t* dest, size_t sz) override {
     for (int i = 0; i < sz; i++) {
       dest[i] = _radio->randomByte();
+    }
+    if (_secondary) {
+      for (size_t i = 0; i < sz; i++) {
+        uint8_t b;
+        _secondary->random(&b, 1);
+        dest[i] ^= b;
+      }
     }
   }
 };
