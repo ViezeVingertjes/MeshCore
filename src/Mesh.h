@@ -8,6 +8,11 @@ class GroupChannel {
 public:
   uint8_t hash[PATH_HASH_SIZE];
   uint8_t secret[PUB_KEY_SIZE];
+
+  int keyLen() const {
+    static const uint8_t zeroes[16] = {};
+    return memcmp(&secret[16], zeroes, 16) == 0 ? 16 : PUB_KEY_SIZE;
+  }
 };
 
 /**

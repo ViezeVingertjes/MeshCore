@@ -367,7 +367,7 @@ void KissModem::handleEncryptData(const uint8_t* data, uint16_t len) {
   uint16_t plaintext_len = len - PUB_KEY_SIZE;
 
   uint8_t buf[KISS_MAX_FRAME_SIZE];
-  int encrypted_len = mesh::Utils::encryptThenMAC(key, buf, plaintext, plaintext_len);
+  int encrypted_len = mesh::Utils::encryptThenMAC(key, PUB_KEY_SIZE, buf, plaintext, plaintext_len);
 
   if (encrypted_len > 0) {
     writeHardwareFrame(HW_RESP(HW_CMD_ENCRYPT_DATA), buf, encrypted_len);
@@ -387,7 +387,7 @@ void KissModem::handleDecryptData(const uint8_t* data, uint16_t len) {
   uint16_t ciphertext_len = len - PUB_KEY_SIZE;
 
   uint8_t buf[KISS_MAX_FRAME_SIZE];
-  int decrypted_len = mesh::Utils::MACThenDecrypt(key, buf, ciphertext, ciphertext_len);
+  int decrypted_len = mesh::Utils::MACThenDecrypt(key, PUB_KEY_SIZE, buf, ciphertext, ciphertext_len);
 
   if (decrypted_len > 0) {
     writeHardwareFrame(HW_RESP(HW_CMD_DECRYPT_DATA), buf, decrypted_len);

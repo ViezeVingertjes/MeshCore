@@ -876,15 +876,10 @@ bool BaseChatMesh::getChannel(int idx, ChannelDetails& dest) {
   return false;
 }
 bool BaseChatMesh::setChannel(int idx, const ChannelDetails& src) {
-  static uint8_t zeroes[] = { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 };
-
   if (idx >= 0 && idx < MAX_GROUP_CHANNELS) {
     channels[idx] = src;
-    if (memcmp(&src.channel.secret[16], zeroes, 16) == 0) {
-      mesh::Utils::sha256(channels[idx].channel.hash, sizeof(channels[idx].channel.hash), src.channel.secret, 16);  // 128-bit key
-    } else {
-      mesh::Utils::sha256(channels[idx].channel.hash, sizeof(channels[idx].channel.hash), src.channel.secret, 32);  // 256-bit key
-    }
+    int klen = src.channel.keyLen();
+    mesh::Utils::sha256(channels[idx].channel.hash, sizeof(channels[idx].channel.hash), src.channel.secret, klen);
     return true;
   }
   return false;

@@ -226,7 +226,7 @@ DispatcherAction Mesh::onRecvPacket(Packet* pkt) {
         for (int j = 0; j < num; j++) {
           // decrypt, checking MAC is valid
           uint8_t data[MAX_PACKET_PAYLOAD];
-          int len = Utils::MACThenDecrypt(channels[j].secret, 16, data, macAndData, pkt->payload_len - i);
+          int len = Utils::MACThenDecrypt(channels[j].secret, channels[j].keyLen(), data, macAndData, pkt->payload_len - i);
           if (len > 0) {  // success!
             onGroupDataRecv(pkt, pkt->getPayloadType(), channels[j], data, len);
             break;
@@ -536,7 +536,7 @@ Packet* Mesh::createGroupDatagram(uint8_t type, const GroupChannel& channel, con
 
   int len = 0;
   memcpy(&packet->payload[len], channel.hash, PATH_HASH_SIZE); len += PATH_HASH_SIZE;
-  len += Utils::encryptThenMAC(channel.secret, 16, &packet->payload[len], data, data_len);
+  len += Utils::encryptThenMAC(channel.secret, channel.keyLen(), &packet->payload[len], data, data_len);
 
   packet->payload_len = len;
 
